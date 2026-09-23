@@ -90,7 +90,7 @@ def collect():
                 source_name=fm.get("source_name", ""), source_url=fm.get("source_url", ""),
                 source_tier=fm.get("source_tier", ""), score=fm.get("score", ""),
                 maturity=fm.get("maturity", ""), jurisdiction=fm.get("jurisdiction", ""),
-                regulator=fm.get("regulator", ""), status=fm.get("status", ""), stage=fm.get("stage", ""), tracks=fm.get("tracks"),
+                regulator=fm.get("regulator", ""), status=fm.get("status", ""), stage=fm.get("stage", ""), tracks=fm.get("tracks"), review=fm.get("review", ""),
                 body=body, links=[], backlinks=[],
             )
     return notes
@@ -415,6 +415,8 @@ def build_notes(notes):
             byline.append(f'<span class="mat mat-{esc(n["maturity"])}">{esc(n["maturity"])}</span>')
         if n["jurisdiction"]:
             byline.append(f'<span class="mat">{esc(n["jurisdiction"])}</span>')
+        if n.get("review"):
+            byline.append(f'<em class="review">{esc(n["review"])}</em>')
         if n["folder"] == "40-regulations":
             st = tracker.stage_of(n)
             if st:
@@ -467,7 +469,9 @@ def tracker_matrix(cells, prefix="", compact=False):
             parts = [stage_meter(st),
                      f'<b class="lv-label">{esc(label) if st else "動態觀察"}</b>']
             if not compact and cell["stage_note"] is not None:
-                parts.append(f'<span class="basis">{esc(cell["stage_note"]["title"])}</span>')
+                sn = cell["stage_note"]
+                flag = f'<em class="review">{esc(sn["review"])}</em>' if sn.get("review") else ""
+                parts.append(f'<span class="basis">{esc(sn["title"])}{flag}</span>')
             if n_ev:
                 latest = cell["events"][0]["date"][5:]
                 parts.append(f'<span class="ev">動態 {n_ev}・{esc(latest)}</span>')
@@ -496,7 +500,8 @@ def build_tracker(notes, cells):
             regs = "".join(
                 f'<li class="reg"><span class="when">法規</span>'
                 f'<a href="{url_for(r["slug"])}">{esc(r["title"])}</a>'
-                f'<span class="st">{stage_meter(tracker.stage_of(r))}{esc(r["status"])}</span></li>'
+                f'<span class="st">{stage_meter(tracker.stage_of(r))}{esc(r["status"])}'
+                f'{"<em class=review>" + esc(r["review"]) + "</em>" if r.get("review") else ""}</span></li>'
                 for r in cell["regs"])
             evs = "".join(
                 f'<li><time class="when">{esc(e["date"])}</time><a href="{url_for(e["slug"])}">{esc(e["title"])}</a>'
@@ -819,6 +824,7 @@ article.note .byline{padding:10px 0;border-top:1px solid var(--rule);border-bott
 .timeline li.missing{background:none;border-left:3px dotted var(--miss);color:var(--dim);font-size:13px}
 .howto{font-size:13px;color:var(--dim);margin:-6px 0 18px}
 .howto code,.timeline code{font:12px var(--mono);background:var(--paper-2);padding:1px 5px}
+.review{font:normal 500 10.5px/1 var(--mono);color:var(--paper);background:var(--dim);padding:2px 5px;margin-left:6px;letter-spacing:.06em;white-space:nowrap}
 .stage-link{display:inline-flex;gap:6px;align-items:center;color:var(--red)!important}
 @media (max-width:720px){
   .tool-right{flex-direction:column;align-items:stretch;gap:8px}
