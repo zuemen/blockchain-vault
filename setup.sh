@@ -44,9 +44,9 @@ cat <<'TXT'
 Obsidian：Open folder as vault → 選這個資料夾
 啟動頁設成 HOME.md（Settings → Appearance 或直接 pin）
 
-上線（GitHub Pages）：
+上線（Actions 抓新聞 + Cloudflare Pages 建站，repo 保持私有）：
   gh repo create blockchain-vault --private --source=. --push
-  repo → Settings → Pages → Source 選 "GitHub Actions"
   repo → Settings → Actions → General → 勾 "Read and write permissions"
+  Cloudflare → Workers & Pages → Pages → Connect to Git（步驟見 README「上線」）
 ──────────────────────────────────────────────
 TXT

@@ -30,7 +30,7 @@ TIER_BONUS = {"primary": 4, "trade": 0, "aggregator": -2}
 # 必須至少命中一個「核心詞」，否則扣重分。
 # 沒有這道閘，監理機關的例行公告（處分、人事、研討會）會靠 tier 加分霸佔榜首。
 CORE = ["zk", "零知識", "zero-knowledge", "ssi", "did", "verifiable credential",
-        "可驗證憑證", "數位身分", "rwa", "tokeniz", "代幣化", "stablecoin", "穩定幣",
+        "可驗證憑證", "數位身分", "rwa", "tokeniz*", "代幣化", "stablecoin", "穩定幣",
         "cbdc", "dvp", "blockchain", "區塊鏈", "distributed ledger", "digital asset",
         "虛擬資產", "數位資產", "settlement asset", "結算資產"]
 CORE_MISS_PENALTY = -8
@@ -46,30 +46,51 @@ def slugify(title: str) -> str:
 def matches(kw: str, low: str) -> bool:
     """ASCII 關鍵字用單字邊界，CJK 用子字串。
 
-    這道處理是必要的：不做邊界比對時 "SSI" 會命中 "Commission"、
-    "SEC" 會命中 "Securities"，結果監理機關的例行處分公告會霸佔榜首。
+    關鍵詞尾端加 * 表示字根，只放寬右邊界（tokeniz* 命中 tokenized、
+    tokenization）。沒加 * 的維持雙邊界，這是必要的防護——否則
+    "SSI" 會命中 "Commission"、"SEC" 會命中 "Securities"，
+    監理機關的例行公告會霸佔榜首。
     """
     k = kw.lower()
+    stem = k.endswith("*")
+    if stem:
+        k = k[:-1]
     if re.fullmatch(r"[a-z0-9\-\. ]+", k):
-        return re.search(rf"(?<![a-z0-9]){re.escape(k)}(?![a-z0-9])", low) is not None
+        right = "" if stem else r"(?![a-z0-9])"
+        return re.search(rf"(?<![a-z0-9]){re.escape(k)}{right}", low) is not None
     return k in low
 
 
-def score(text: str, tier: str):
-    """關鍵字加權評分，回傳 (分數, 命中的詞)。"""
-    low = text.lower()
+def score(title: str, summary: str, tier: str):
+    """標題命中加倍，並對主題組合額外加分——讓分數真的有區分度。"""
+    t, sm = title.lower(), summary.lower()
     hits, s = [], 0
     for kw, w in CFG["weights"].items():
-        if matches(kw, low):
-            s += w
-            hits.append(kw)
-    s = min(s, 10)
+        in_t, in_s = matches(kw, t), matches(kw, sm)
+        if in_t or in_s:
+            s += w * 2 if in_t else w      # 標題命中加倍
+            hits.append(kw.rstrip("*"))   # 去掉字根標記，清單才乾淨
+
+    # 主題組合加分：兩組詞同時出現才是真正要找的訊號，單獨出現只是背景雜訊
+    low = f"{t} {sm}"
+    combos = [
+        (["代幣化", "tokeniz*"], ["結算", "settle*", "dvp", "cbdc"], 4),
+        (["穩定幣", "stablecoin"], ["法規", "監理", "regulat*", "licence", "license"], 3),
+        (["ssi", "did", "verifiable credential", "可驗證憑證", "數位身分"],
+         ["kyc", "aml", "法規", "監理", "regulat*"], 4),
+        (["zk", "零知識", "zero-knowledge"],
+         ["身分", "identity", "隱私", "privacy", "compliance", "法遵"], 4),
+        (["rwa", "代幣化"],
+         ["基金", "fund", "債券", "bond", "黃金", "gold", "存款", "deposit"], 3),
+    ]
+    for a, b, bonus in combos:
+        if any(matches(x, low) for x in a) and any(matches(y, low) for y in b):
+            s += bonus
+
+    s = min(s, 20)                          # 上限 20
     core_hit = any(matches(c, low) for c in CORE)
     # tier 加分只在命中核心主題時才給，否則一手來源的例行公告會蓋掉真正相關的報導
-    if core_hit:
-        s += TIER_BONUS.get(tier, 0)
-    else:
-        s += CORE_MISS_PENALTY
+    s += TIER_BONUS.get(tier, 0) if core_hit else CORE_MISS_PENALTY
     return s, hits
 
 
@@ -78,8 +99,8 @@ def topics_of(hits):
     m = {
         "ZK": ["ZK", "零知識", "zero-knowledge", "zk-proof"],
         "SSI": ["SSI", "DID", "verifiable credential", "可驗證憑證", "數位身分"],
-        "RWA": ["RWA", "tokeniz", "代幣化", "DvP", "settlement", "結算"],
-        "金融法規": ["regulation", "法規", "監理", "金管會", "FinCEN", "SEC", "HKMA", "SFC", "BIS"],
+        "RWA": ["RWA", "tokeniz", "代幣化", "代幣化存款", "deposit token", "DvP", "settle", "結算"],
+        "金融法規": ["regulat", "licens", "法規", "監理", "金管會", "FinCEN", "SEC", "HKMA", "SFC", "BIS"],
         "穩定幣": ["stablecoin", "穩定幣", "CBDC", "wCBDC"],
     }
     out = [t for t, kws in m.items() if any(k in hits for k in kws)]
@@ -117,7 +138,7 @@ def collect(hours):
                     when = dt.datetime.now(dt.timezone.utc)
                 title = (e.get("title") or "").strip()
                 summary = re.sub(r"<[^>]+>", " ", e.get("summary", ""))[:800]
-                sc, hits = score(f"{title} {summary}", tier)
+                sc, hits = score(title, summary, tier)
                 items.append(dict(title=title, url=e.get("link", ""), source=src["name"],
                                   tier=tier, when=when.astimezone(TZ), score=sc,
                                   hits=hits, summary=summary.strip()))

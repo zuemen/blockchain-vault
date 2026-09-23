@@ -54,20 +54,35 @@ make help              # 看所有指令
 `make status` 會提醒你 seed 是不是太多——那代表在囤積不在消化。
 
 ## 自動化怎麼跑
-`.github/workflows/daily.yml`：台北時間每天 07:00 抓新聞 → commit 事件卡 → 建站 → 部署 GitHub Pages。
-你自己 push 筆記上來也會重建網站（但不會重抓新聞）。
+分工：**GitHub Actions 只抓新聞，建站與部署交給 Cloudflare Pages。**
+
+```
+Actions（台北 07:00）抓新聞 → commit 事件卡＋每日筆記 → push
+        ↓（Cloudflare 監聽 repo 的 push）
+Cloudflare Pages 自動 build（python scripts/build_site.py）→ 網站更新
+```
+
+- `.github/workflows/news.yml`：每天 UTC 23:00（台北 07:00）跑，週一自動改抓 72 小時補週末；Actions 頁面也能手動觸發。
+- 你自己 push 筆記上來，一樣會觸發 Cloudflare 重建（但不會重抓新聞）。
+- 沒抓到新事件就不 commit，Cloudflare 也不會重建。
+- 筆記 repo **保持私有**：Cloudflare Pages 可以連私有 repo，不用像免費版 GitHub Pages 那樣公開。
+
 細節與調權重：`scripts/README.md`。網站產生器：`scripts/build_site.py`（純 Python，無 npm）。
 
-## 上線（一次性）
-```bash
-gh repo create blockchain-vault --private --source=. --push
-```
-然後在 repo 設定兩處：
-1. Settings → Pages → Source 選 **GitHub Actions**
-2. Settings → Actions → General → Workflow permissions 勾 **Read and write permissions**（否則 bot 推不上事件卡）
+## 上線（一次性，Cloudflare Pages）
+1. 建私有 repo 並推上去：
+   ```bash
+   gh repo create blockchain-vault --private --source=. --push
+   ```
+2. GitHub repo → Settings → Actions → General → Workflow permissions 勾 **Read and write permissions**（否則 bot 推不上事件卡）。
+3. Cloudflare dashboard → Workers & Pages → Create → Pages → **Connect to Git** → 授權並選這個私有 repo：
+   - Build command：`pip install feedparser pyyaml markdown && python scripts/build_site.py`
+   - Build output directory：`site`
+   - 環境變數 `SITE_URL`：設成部署後的網址（例：`https://blockchain-vault.pages.dev`），RSS 的連結才會是絕對網址。第一次部署完拿到網址再回來補，然後 Retry deployment。
+4. （可選）Cloudflare Zero Trust → Access → 對這個網域加一條 Application，只允許你的 email（一次性驗證碼登入），網站就只有你看得到。
 
-私有 repo 也能用 GitHub Pages（Pro 帳號）；免費帳號要公開 repo 才能發佈網站——
-若不想公開筆記，就別開 Pages，只用 `make serve` 在本機看。
+RSS：網站會產生 `feed.xml`（最新 30 則事件），首頁有 autodiscovery，閱讀器貼網站網址就能訂閱。
+若開了 Cloudflare Access，外部 RSS 閱讀器會被擋在登入頁外——要訂閱就得對 `/feed.xml` 另開 bypass 規則，或接受只在本機看。
 
 ## Obsidian
 Open folder as vault → 選這個資料夾。四個設定：

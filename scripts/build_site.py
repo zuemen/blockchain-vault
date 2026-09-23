@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """把 vault 建成靜態網站（純 Python，無 npm）。
 
-產出：site/index.html、site/n/<slug>.html、site/search.json、site/assets/*
+產出：site/index.html、site/n/<slug>.html、site/search.json、site/feed.xml、site/assets/*
 公開：10-events / 20-concepts / 30-entities / 40-regulations / 50-maps
 不公開：00-inbox、99-daily（每日筆記）、60-outputs（日報週報）、templates、scripts
 
 用法： python3 scripts/build_site.py
 """
-import json, re, shutil, sys, urllib.parse
+import json, os, re, shutil, sys, urllib.parse
+from email.utils import format_datetime
+from xml.sax.saxutils import escape as xml_escape
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -29,6 +31,9 @@ PUBLIC_DIRS = {
 }
 SITE_TITLE = "Blockchain Vault"
 SITE_DESC = "ZK · SSI · RWA · 金融法規 — 每日自動抓取，人工判讀"
+# 站台網址（例：https://blockchain-vault.pages.dev）。沒設就用相對路徑，RSS 連結會是 n/<slug>.html
+SITE_URL = os.environ.get("SITE_URL", "").rstrip("/")
+FEED_SIZE = 30                                   # RSS 最多收幾則事件
 
 FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.S)
 WIKI_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]")
@@ -162,6 +167,7 @@ def shell(title, body, depth=0, desc=SITE_DESC):
 <meta name="description" content="{desc}">
 <title>{title}</title>
 <link rel="stylesheet" href="{up}assets/style.css">
+<link rel="alternate" type="application/rss+xml" title="{SITE_TITLE} — 事件" href="{up}feed.xml">
 </head>
 <body>
 <header class="site">
@@ -174,6 +180,7 @@ def shell(title, body, depth=0, desc=SITE_DESC):
 <footer>
   <span>最後更新 {datetime.now(TZ).strftime('%Y-%m-%d %H:%M')} (UTC+8)</span>
   <span>事件卡由腳本抓取骨架，判讀與概念筆記為人工撰寫</span>
+  <span><a href="{up}feed.xml">訂閱 RSS</a></span>
 </footer>
 <script src="{up}assets/app.js"></script>
 </body>
@@ -391,18 +398,83 @@ JS = """
 """
 
 
+def one_liner(note):
+    """抓事件卡的「一句話」段落；沒填（或還是「（待填）」）就退回 excerpt。"""
+    m = re.search(r"^##\s*一句話\s*\n(.*?)(?=^##\s|\Z)", note["body"], re.S | re.M)
+    txt = m.group(1).strip() if m else ""
+    txt = WIKI_RE.sub(lambda w: w.group(2) or w.group(1), txt)   # [[連結|別名]] → 純文字
+    txt = re.sub(r"[*_`]", "", txt)                              # 去掉 markdown 強調符號
+    txt = re.sub(r"\s+", " ", txt).strip()
+    if not txt or txt.startswith("（待填"):
+        return excerpt(note, 200)
+    return txt
+
+
+def rfc822(date_str):
+    """把 frontmatter 的 YYYY-MM-DD 轉成 RFC 822（台北時間 00:00）；解析失敗回傳 None。"""
+    try:
+        d = datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=TZ)
+    except ValueError:
+        return None
+    return format_datetime(d)
+
+
+def build_feed(notes):
+    """RSS 2.0：只收 10-events，依日期新到舊取前 FEED_SIZE 則。"""
+    events = sorted([n for n in notes.values() if n["folder"] == "10-events"],
+                    key=lambda x: x["date"], reverse=True)[:FEED_SIZE]
+    base = f"{SITE_URL}/" if SITE_URL else ""
+    items = []
+    for n in events:
+        link = base + url_for(n["slug"])
+        pub = rfc822(n["date"])
+        parts = [
+            "  <item>",
+            f"    <title>{xml_escape(n['title'])}</title>",
+            f"    <link>{xml_escape(link)}</link>",
+            # 有絕對網址時 guid 才能當永久連結
+            f'    <guid isPermaLink="{"true" if SITE_URL else "false"}">{xml_escape(link)}</guid>',
+        ]
+        if pub:
+            parts.append(f"    <pubDate>{pub}</pubDate>")
+        parts.append(f"    <description>{xml_escape(one_liner(n))}</description>")
+        parts += [f"    <category>{xml_escape(t)}</category>" for t in n["topics"]]
+        parts.append("  </item>")
+        items.append("\n".join(parts))
+
+    head = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
+        "<channel>",
+        f"  <title>{xml_escape(SITE_TITLE)} — 事件</title>",
+        f"  <link>{xml_escape(base or 'index.html')}</link>",
+        f"  <description>{xml_escape(SITE_DESC)}</description>",
+        "  <language>zh-Hant</language>",
+        f"  <lastBuildDate>{format_datetime(datetime.now(TZ))}</lastBuildDate>",
+    ]
+    if SITE_URL:
+        head.append(f'  <atom:link href="{xml_escape(base)}feed.xml" rel="self" type="application/rss+xml"/>')
+    xml = "\n".join(head + items + ["</channel>", "</rss>"]) + "\n"
+    (OUT / "feed.xml").write_text(xml, encoding="utf-8")
+    return len(events)
+
+
 def main():
-    if OUT.exists():
-        shutil.rmtree(OUT)
+    # 只清空 site/ 的內容、保留資料夾本身：Windows 上若 run serve 正在 site/ 裡跑，
+    # 資料夾被佔用刪不掉，整個 rmtree 會失敗
+    OUT.mkdir(exist_ok=True)
+    for child in OUT.iterdir():
+        shutil.rmtree(child) if child.is_dir() else child.unlink()
     (OUT / "assets").mkdir(parents=True)
     notes = resolve_links(collect())
     build_index(notes)
     build_notes(notes)
     build_search(notes)
+    n_feed = build_feed(notes)
     (OUT / "assets" / "style.css").write_text(CSS, encoding="utf-8")
     (OUT / "assets" / "app.js").write_text(JS, encoding="utf-8")
     (OUT / ".nojekyll").write_text("", encoding="utf-8")
-    print(f"✓ 網站已產生：{OUT}（{len(notes)} 篇筆記）")
+    print(f"✓ 網站已產生：{OUT}（{len(notes)} 篇筆記，RSS {n_feed} 則）")
 
 
 if __name__ == "__main__":

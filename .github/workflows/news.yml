@@ -1,0 +1,43 @@
+# 每天抓新聞並 commit 事件卡與每日筆記。
+# 這裡只負責「抓」，不建站、不部署——push 之後由 Cloudflare Pages 自動 build。
+name: news
+
+on:
+  schedule:
+    - cron: "0 23 * * *"      # UTC 23:00 = 台北 07:00
+  workflow_dispatch:          # 保留手動觸發（Actions 頁面 → Run workflow）
+
+permissions:
+  contents: write             # 只需要能 push 事件卡
+
+concurrency:
+  group: news
+  cancel-in-progress: false   # 不中斷進行中的抓取，避免 commit 做到一半
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install feedparser pyyaml
+
+      - name: 抓新聞（週一改抓 72 小時補週末）
+        run: |
+          HOURS=36
+          # 用台北時間判斷星期：cron 在 UTC 週日 23:00 觸發，那時台北已是週一
+          [ "$(TZ=Asia/Taipei date +%u)" = "1" ] && HOURS=72
+          echo "抓取最近 ${HOURS} 小時"
+          python3 scripts/fetch_news.py --hours "$HOURS" --top 8
+
+      - name: commit 事件卡與每日筆記
+        run: |
+          git config user.name  "news-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add 10-events 99-daily
+          # 沒有新東西就不 commit，也不會觸發 Cloudflare 重建
+          git diff --staged --quiet && { echo "無新事件"; exit 0; }
+          git commit -m "news: $(TZ=Asia/Taipei date +%Y-%m-%d)"
+          git push

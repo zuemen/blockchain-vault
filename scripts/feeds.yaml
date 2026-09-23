@@ -50,16 +50,16 @@ weights:
   可驗證憑證: 3
   數位身分: 2
   RWA: 3
-  tokeniz: 2
+  "tokeniz*": 2
   代幣化: 2
   stablecoin: 2
   穩定幣: 2
-  settlement: 2
+  "settle*": 2          # settle / settled / settlement / settling
   結算: 2
   DvP: 3
   wCBDC: 3
   CBDC: 2
-  regulation: 2
+  "regulat*": 2         # regulation / regulatory / regulate
   法規: 2
   監理: 2
   金管會: 3
@@ -69,5 +69,9 @@ weights:
   FinCEN: 3
   SEC: 2
   BIS: 2
-  custody: 1
+  "custod*": 1          # custody / custodian / custodial
+  "licens*": 2          # license / licensing / licensed
+  licence: 2            # 英式拼法（c 結尾），licens* 比不到，單獨列
+  deposit token: 3
+  代幣化存款: 3
   託管: 1
