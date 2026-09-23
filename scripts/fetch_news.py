@@ -11,8 +11,8 @@
 
 相依：pip install feedparser pyyaml
 """
-import argparse, datetime as dt, hashlib, json, os, re, sys, unicodedata
-import socket, time
+import argparse, datetime as dt, hashlib, html, json, os, re, sys, unicodedata
+import socket, time, urllib.parse
 from pathlib import Path
 
 try:
@@ -36,8 +36,20 @@ TIER_BONUS = {"primary": 4, "trade": 0, "aggregator": -2}
 CORE = ["zk", "零知識", "zero-knowledge", "ssi", "did", "verifiable credential",
         "可驗證憑證", "數位身分", "rwa", "tokeniz*", "tokenis*", "代幣化", "stablecoin", "穩定幣",
         "cbdc", "dvp", "blockchain", "區塊鏈", "distributed ledger", "digital asset",
-        "虛擬資產", "數位資產", "settlement asset", "結算資產"]
+        "虛擬資產", "數位資產", "settlement asset", "結算資產",
+        # 重點追蹤對象：本身就是區塊鏈金融主題，命中即算核心
+        "chainlink", "ccip", "kinexys", "fireblocks", "polygon", "polygon id", "privado id",
+        "zero knowledge", "zkp", "zkevm", "hyperledger"]
 CORE_MISS_PENALTY = -8
+
+# 有些站（動區等）會擋 feedparser 預設 UA，統一用一般瀏覽器 UA
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/128 Safari/537.36")
+
+# 摘要尾巴的 RSS 樣板句，存了只是佔空間
+BOILERPLATE = [r"The post .{0,200}? appeared first on .{0,80}?\.?$", r"\[?…\]?\s*$",
+               r"(Continue|Read) (reading|more).{0,40}$", r"本文.{0,20}(首發|原文)於.{0,40}$"]
+SUMMARY_MAX = 600      # 事件卡內容上限（字）
 
 # 雜訊詞（活動宣傳、空投等）每命中一個扣分；清單在 feeds.yaml 的 noise
 NOISE_PENALTY = -6
@@ -82,7 +94,7 @@ def matches(kw: str, low: str) -> bool:
     return k in low
 
 
-def score(title: str, summary: str, tier: str):
+def score(title: str, summary: str, tier: str, assume_core: bool = False):
     """標題命中加倍，並對主題組合額外加分——讓分數真的有區分度。"""
     t, sm = title.lower(), summary.lower()
     hits, s = [], 0
@@ -113,7 +125,8 @@ def score(title: str, summary: str, tier: str):
     # 雜訊詞：活動宣傳稿、空投等，每命中一個扣分（宣傳詞越多越像宣傳稿）
     noise_hits = [n for n in CFG.get("noise", []) if matches(n, low)]
     s += NOISE_PENALTY * len(noise_hits)
-    core_hit = any(matches(c, low) for c in CORE)
+    # assume_core：來源本身就是主題查詢（例：Google News「JPMorgan + tokenization」），不再要求命中核心詞
+    core_hit = assume_core or any(matches(c, low) for c in CORE)
     # tier 加分只在命中核心主題時才給，否則一手來源的例行公告會蓋掉真正相關的報導
     s += TIER_BONUS.get(tier, 0) if core_hit else CORE_MISS_PENALTY
     return s, hits
@@ -122,7 +135,10 @@ def score(title: str, summary: str, tier: str):
 def topics_of(hits):
     """把命中的詞歸到我的四大主題。"""
     m = {
-        "ZK": ["ZK", "零知識", "zero-knowledge", "zk-proof"],
+        "ZK": ["ZK", "零知識", "zero-knowledge", "zk-proof", "zero knowledge", "ZKP", "zkEVM"],
+        "重點機構": ["Chainlink", "CCIP", "Kinexys", "Onyx", "JPMorgan", "J.P. Morgan", "JP Morgan", "摩根大通",
+                 "Fidelity", "富達", "BNY", "紐約梅隆", "Fireblocks", "Polygon", "Polygon ID", "Privado ID",
+                 "Hyperledger"],
         "SSI": ["SSI", "DID", "verifiable credential", "可驗證憑證", "數位身分"],
         "RWA": ["RWA", "tokeniz", "tokenis", "代幣化", "代幣化存款", "deposit token", "DvP", "settle", "結算"],
         "金融法規": ["regulat", "licens", "法規", "監理", "金管會", "FinCEN", "SEC", "HKMA", "SFC", "BIS"],
@@ -217,14 +233,45 @@ def dedup(items):
     return out
 
 
+def clean_summary(raw: str, title: str = "") -> str:
+    """RSS 摘要轉乾淨純文字：去標籤、解 HTML 實體、去樣板句，在句尾截斷。
+    摘要只是標題重述（Google News 就是這樣）時回傳空字串，不存廢話。"""
+    # 先解碼再去標籤：反過來的話，編碼過的 &lt;script&gt; 會在解碼後變成真的 HTML 被寫進卡片
+    t = re.sub(r"<[^>]+>", " ", html.unescape(raw or ""))
+    t = re.sub(r"\s+", " ", t).strip()
+    for pat in BOILERPLATE:
+        t = re.sub(pat, "", t, flags=re.I).strip()
+    if title:
+        tl = re.sub(r"\W+", "", title.lower())
+        if not t or re.sub(r"\W+", "", t.lower()).startswith(tl[: max(20, len(tl) - 5)]):
+            return ""
+    if len(t) > SUMMARY_MAX:
+        cut = t[:SUMMARY_MAX]
+        end = max(cut.rfind(x) for x in ("。", "！", "？", ". ", "! ", "? "))
+        t = cut[: end + 1] if end > SUMMARY_MAX // 2 else cut.rstrip() + "…"
+    return t
+
+
+GNEWS_LOCALE = {"en": "hl=en-US&gl=US&ceid=US:en", "tw": "hl=zh-TW&gl=TW&ceid=TW:zh-Hant"}
+
+
+def gnews_url(query: str, lang: str, hours: int) -> str:
+    """Google News 搜尋 RSS：一次涵蓋數千家媒體。when:Nd 限定時間窗，跟 --hours 對齊。"""
+    days = max(1, -(-hours // 24))
+    return (f"https://news.google.com/rss/search?q={urllib.parse.quote(f'{query} when:{days}d')}"
+            f"&{GNEWS_LOCALE.get(lang, GNEWS_LOCALE['en'])}")
+
+
 def collect(hours):
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours)
     items = []
-    for tier in ("primary", "trade"):
+    for tier in ("primary", "trade", "aggregator"):
         for src in CFG.get(tier, []):
             t0 = time.monotonic()
+            gnews = "query" in src          # aggregator 用關鍵字查詢，不寫死網址
+            url = gnews_url(src["query"], src.get("lang", "en"), hours) if gnews else src["url"]
             try:
-                fp = feedparser.parse(src["url"])
+                fp = feedparser.parse(url, agent=UA)
             except Exception as e:
                 print(f"  ! {src['name']} 抓取失敗：{e}", file=sys.stderr)
                 FEED_STATS[src["name"]] = (0, 0, str(e))
@@ -243,10 +290,17 @@ def collect(hours):
                 else:
                     when = dt.datetime.now(dt.timezone.utc)
                 in_window += 1
-                title = (e.get("title") or "").strip()
-                summary = re.sub(r"<[^>]+>", " ", e.get("summary", ""))[:800]
-                sc, hits = score(title, summary, tier)
-                items.append(dict(title=title, url=e.get("link", ""), source=src["name"],
+                title = html.unescape((e.get("title") or "").strip())
+                source = src["name"]
+                if gnews:
+                    # Google News 標題結尾是「 - 媒體名」，拿掉才能跟其他來源去重；來源改記真正的媒體
+                    outlet = (e.get("source") or {}).get("title") or ""
+                    if outlet and title.endswith(f" - {outlet}"):
+                        title = title[: -len(outlet) - 3].strip()
+                    source = f"{outlet}（{src['name']}）" if outlet else src["name"]
+                summary = clean_summary(e.get("summary", ""), title)
+                sc, hits = score(title, summary, tier, src.get("assume_core", False))
+                items.append(dict(title=title, url=e.get("link", ""), source=source,
                                   tier=tier, when=when.astimezone(TZ), score=sc,
                                   hits=hits, summary=summary.strip()))
             secs = time.monotonic() - t0
@@ -263,6 +317,7 @@ def write_event(it):
     if path.exists():
         return None
     topics = ", ".join(topics_of(it["hits"]))
+    # 只存連結與內容：entities／判讀等人工欄位由人寫筆記時再加，自動卡不預留空殼
     body = f"""---
 type: event
 date: {date}
@@ -271,28 +326,13 @@ source_url: {yq(it['url'])}
 source_name: {yq(it['source'])}
 source_tier: {it['tier']}
 topics: [{topics}]
-entities: []
-regulations: []
-concepts: []
 score: {it['score']}
 status: unread
-used_in: []
 auto: true
-keyword_hits: [{", ".join(it['hits'][:8])}]
 ---
-
-## 一句話
-（待填）
-
-## 事實（只放可查證的）
-- {it['summary'][:300]}
-
-## 我的判讀
--
-
-## 未解
--
 """
+    if it["summary"]:
+        body += f"\n## 內容\n{it['summary']}\n"
     path.write_text(body, encoding="utf-8")
     return path
 
@@ -313,11 +353,11 @@ def rescore_existing(dry_run=False):
         title_s = str(meta.get("title") or "").strip()
         tier_s = str(meta.get("source_tier") or "trade")
         old = re.search(r"^score:\s*(-?\d+)", fm.group(1), re.M)
-        facts = re.search(r"^## 事實[^\n]*\n(.*?)(?=^##\s|\Z)", txt, re.S | re.M)
+        facts = re.search(r"^## (?:內容|事實)[^\n]*\n(.*?)(?=^##\s|\Z)", txt, re.S | re.M)
         summary = re.sub(r"^\s*-\s*", "", facts.group(1).strip(), flags=re.M) if facts else ""
         if not (title_s and old):
             continue
-        new, _ = score(title_s, summary, tier_s)
+        new, _ = score(title_s, summary, tier_s, tier_s == "aggregator")
         if new != int(old.group(1)):
             changed += 1
             print(f"  {int(old.group(1)):>3} → {new:>3}  {title_s[:56]}")
@@ -331,7 +371,7 @@ def rescore_existing(dry_run=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=int, default=36)
-    ap.add_argument("--top", type=int, default=15)
+    ap.add_argument("--top", type=int, default=40)
     ap.add_argument("--min-score", type=int, default=3,
                     help="低於此分數不開事件卡（預設 3：至少命中一個核心主題且非宣傳稿）")
     ap.add_argument("--dry-run", action="store_true")

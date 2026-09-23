@@ -81,6 +81,19 @@ trade:
     url: https://www.pymnts.com/category/cryptocurrency/feed/
   - name: Chainalysis Blog
     url: https://www.chainalysis.com/blog/feed/
+  # ── 指定來源（2026-09-24 加）──
+  - name: blockchain.news
+    url: https://blockchain.news/RSS/
+  - name: CB Insights Research
+    url: https://www.cbinsights.com/research/feed/          # 全科技研究，靠關鍵詞過濾
+  - name: LF Decentralized Trust（Hyperledger）
+    url: https://www.lfdecentralizedtrust.org/blog/rss.xml  # Hyperledger Fabric 的母組織，更新慢
+  - name: Fireblocks Blog
+    url: https://www.fireblocks.com/blog/feed/
+  - name: Dune Blog
+    url: https://dune.com/blog/feed
+  - name: Seeking Alpha JPM
+    url: https://seekingalpha.com/api/sa/combined/JPM.xml  # 個股 feed；BK（BNY）回 404，改用下方 Google News
   # ── 數位身分 ──
   - name: Biometric Update (Digital ID)
     url: https://www.biometricupdate.com/tag/digital-identity/feed
@@ -89,6 +102,8 @@ trade:
   # ── 中文（量大，靠評分門檻過濾）──
   - name: 鏈新聞 ABMedia
     url: https://abmedia.io/feed
+  - name: 動區動趨 BlockTempo
+    url: https://www.blocktempo.com/feed/                   # 要帶瀏覽器 UA 才有內容（fetch_news.py 已統一帶）
   - name: PANews
     url: https://www.panewslab.com/rss.xml?lang=zh&type=NEWS
   - name: 吳說區塊鏈
@@ -97,8 +112,50 @@ trade:
     url: https://www.techflowpost.com/rss.aspx
   - name: Odaily
     url: https://rss.odaily.news/rss/post
-  # 不收：動區動趨（/feed/ 回空 channel）、Galaxy Research（無 RSS）、Blockworks／DL News（feed 停更）、Foresight News（567）、
-  #       ChainCatcher（一天 200+ 則且與上列重疊）
+  # 不收：Galaxy Research（無 RSS）、Blockworks／DL News（feed 停更）、Foresight News（567）、
+  #       ChainCatcher（一天 200+ 則且與上列重疊）、Chainlink 官方部落格（已無 RSS）、Polygon 部落格（連線被拒）、
+  #       X／Twitter（官方 API 要付費，免費鏡像站都已失效）
+
+# Google News 關鍵字查詢：一次涵蓋數千家國際與台灣媒體，補足直連 RSS 抓不到的重點機構新聞。
+# query 用 Google News 語法；lang: en（國際英文）或 tw（繁中）。時間窗由 --hours 自動帶入。
+# assume_core: 查詢字串本身已限定區塊鏈金融主題，標題不必再命中核心詞。
+# 每則的「來源」會記成真正的媒體名，例：Reuters（GN Chainlink）。
+aggregator:
+  - name: GN Chainlink
+    query: 'Chainlink OR CCIP'
+    assume_core: true
+  - name: GN JPMorgan／Kinexys
+    query: '(JPMorgan OR "J.P. Morgan" OR Kinexys OR Onyx) (blockchain OR tokenization OR tokenized OR stablecoin OR "deposit token" OR JPMD)'
+    assume_core: true
+  - name: GN Fidelity
+    query: 'Fidelity (blockchain OR tokenized OR tokenization OR stablecoin OR "digital assets")'
+    assume_core: true
+  - name: GN BNY
+    query: '(BNY OR "BNY Mellon") (blockchain OR tokenized OR tokenization OR stablecoin OR "digital assets")'
+    assume_core: true
+  - name: GN Fireblocks
+    query: 'Fireblocks'
+    assume_core: true
+  - name: GN Zero Knowledge
+    query: '"zero-knowledge" OR "zero knowledge proof" OR zkEVM OR "ZK proof"'
+    assume_core: true
+  - name: GN Polygon
+    query: '"Polygon ID" OR "Privado ID" OR AggLayer OR "Polygon Labs" OR "Polygon network" OR "Polygon blockchain"'
+    assume_core: true
+  - name: GN Hyperledger
+    query: 'Hyperledger OR "LF Decentralized Trust"'
+    assume_core: true
+  - name: GN Seeking Alpha
+    query: 'site:seekingalpha.com (blockchain OR tokenization OR tokenized OR stablecoin)'
+    assume_core: true
+  - name: GN 重點機構（繁中）
+    query: '(摩根大通 OR 富達 OR 紐約梅隆 OR Chainlink OR Fireblocks OR Polygon) (區塊鏈 OR 代幣化 OR 穩定幣)'
+    lang: tw
+    assume_core: true
+  - name: GN 區塊鏈金融（繁中）
+    query: '代幣化 OR 穩定幣 OR 零知識證明 OR RWA OR 代幣化存款'
+    lang: tw
+    assume_core: true
 
 # 主題權重：命中越多、權重越高的詞，score 越高
 weights:
@@ -138,6 +195,27 @@ weights:
   deposit token: 3
   代幣化存款: 3
   託管: 1
+  # ── 重點追蹤機構與技術（2026-09-24 加）──
+  Chainlink: 3
+  CCIP: 3
+  Kinexys: 3            # JPMorgan 的區塊鏈部門，2024-11 由 Onyx 改名
+  Onyx: 2
+  JPMorgan: 2
+  J.P. Morgan: 2
+  JP Morgan: 2
+  摩根大通: 2
+  Fidelity: 2
+  富達: 2
+  BNY: 2                # 單字邊界比對，也會命中 BNY Mellon
+  紐約梅隆: 2
+  Fireblocks: 3
+  Polygon: 2
+  Polygon ID: 3
+  Privado ID: 3         # Polygon ID 2024 年獨立後的新名稱
+  zero knowledge: 3
+  ZKP: 3
+  zkEVM: 3
+  Hyperledger: 2
 
 # 雜訊詞：活動宣傳、空投、行銷。每命中一個扣 6 分（fetch_news.py 的 NOISE_PENALTY）
 noise:
@@ -157,6 +235,9 @@ noise:
   - 將亮相
   - 盛大
   - 即將舉行
+  - price prediction    # 幣價預測文，Polygon／Chainlink 查詢常帶進來
+  - price analysis
+  - 價格預測
 
 # 事件級去重門檻（標題關鍵詞 Jaccard 相似度），見 fetch_news.py 的 DEDUP_THRESHOLD
 dedup_threshold: 0.35
