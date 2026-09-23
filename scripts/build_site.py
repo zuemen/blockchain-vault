@@ -237,6 +237,12 @@ def build_index(notes):
     <div class="cards">{''.join(card(n) for n in events[:20])}</div>
   </section>
 
+  <section class="block" id="recent-comments">
+    <h2>最近留言</h2>
+    <p class="note c-status">載入中…</p>
+    <ul class="linklist c-recent"></ul>
+  </section>
+
   {list_block("主題地圖", mocs, "每張地圖帶著我的核心主張與開放問題")}
   {list_block("概念", concepts, "知識累積在這裡。maturity 標示成熟度：seed 還講不深、growing 有案例、stable 能上台講")}
   {list_block("法規追蹤", regs)}
@@ -244,6 +250,32 @@ def build_index(notes):
 </div>
 """
     (OUT / "index.html").write_text(shell(SITE_TITLE, body, 0), encoding="utf-8")
+
+
+def comments_block(slug):
+    """筆記頁底部的留言區骨架。內容由 app.js 以 textContent 填入，不在這裡插入任何使用者輸入。"""
+    stars = "".join(
+        f'<button type="button" class="star" data-v="{i}" aria-label="{i} 顆星" aria-pressed="false">★</button>'
+        for i in range(1, 6))
+    return f"""<section class="comments" id="comments" data-slug="{html_attr(slug)}">
+  <h2>留言</h2>
+  <p class="note c-status">載入中…</p>
+  <ol class="c-list"></ol>
+  <form class="c-form" hidden>
+    <p class="c-hint">這篇判讀對你有幫助嗎？（選填）</p>
+    <div class="stars" role="group" aria-label="評分">{stars}<button type="button" class="star-clear">不評分</button></div>
+    <input class="c-name" type="text" maxlength="40" placeholder="暱稱（可空，顯示為訪客）" autocomplete="nickname">
+    <textarea class="c-body" maxlength="1000" rows="4" required placeholder="想法、補充、反對意見都歡迎（上限 1000 字）"></textarea>
+    <div class="c-actions"><span class="c-count">0 / 1000</span><button type="submit" class="c-submit">送出</button></div>
+    <p class="c-msg" role="status"></p>
+  </form>
+</section>"""
+
+
+def html_attr(v):
+    """屬性值跳脫（slug 可能含引號等字元）。"""
+    return (str(v).replace("&", "&amp;").replace('"', "&quot;")
+            .replace("<", "&lt;").replace(">", "&gt;"))
 
 
 def build_notes(notes):
@@ -268,13 +300,14 @@ def build_notes(notes):
         body = f"""
 <article class="note">
   <p class="crumb"><a href="../index.html">← 全部</a> · {n['folder_label']}</p>
-  <h1>{n['title']}</h1>
+  <h1>{n['title']} <span class="c-stat" id="c-stat"></span></h1>
   <div class="m">{meta_bar(n)}</div>
   {src}
   <div class="prose">{n['html']}</div>
 </article>
 {fwd}
 {bl}
+{comments_block(n['slug'])}
 """
         (nd / f"{n['slug']}.html").write_text(
             shell(f"{n['title']} — {SITE_TITLE}", body, 1, excerpt(n, 120)), encoding="utf-8")
@@ -360,6 +393,36 @@ footer{max-width:920px;margin:40px auto 24px;padding:16px 20px;border-top:1px so
 .backlinks{margin-top:30px;padding-top:14px;border-top:1px solid var(--line)}
 .backlinks h2{font-size:13px;color:var(--dim);margin:0 0 6px}
 .backlinks ul{margin:0;padding-left:18px;font-size:13.5px}
+/* 留言 */
+.c-stat{font-size:12.5px;font-weight:400;color:var(--dim);white-space:nowrap}
+.comments{margin-top:34px;padding-top:14px;border-top:1px solid var(--line)}
+.comments h2{font-size:15px;margin:0 0 8px}
+.c-list{list-style:none;padding:0;margin:0 0 18px}
+.c-item{border-bottom:1px solid var(--line);padding:10px 2px}
+.c-head{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:12.5px;color:var(--dim)}
+.c-who{font-weight:600;color:var(--fg)}
+.c-stars{color:var(--accent);letter-spacing:1px}
+.c-text{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.c-form{display:grid;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.c-form[hidden]{display:none}   /* display:grid 會蓋掉 hidden 屬性，要明寫 */
+.c-hint{margin:0;font-size:13px;color:var(--dim)}
+.stars{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
+.star{background:none;border:0;padding:4px 3px;font-size:24px;line-height:1;color:var(--miss);cursor:pointer;min-width:34px;min-height:34px}
+.star.on{color:var(--accent)}
+.star:focus-visible,.star-clear:focus-visible{outline:2px solid var(--accent);border-radius:6px}
+.star-clear{background:none;border:0;color:var(--dim);font-size:12px;cursor:pointer;margin-left:6px;text-decoration:underline}
+.c-name,.c-body{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--fg);font:inherit;font-size:16px}
+.c-body{resize:vertical;min-height:90px}
+.c-name:focus,.c-body:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.c-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.c-count{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.c-submit{background:var(--accent);color:var(--bg);border:0;border-radius:8px;padding:8px 18px;font:inherit;font-weight:600;cursor:pointer}
+.c-submit:disabled{opacity:.5;cursor:default}
+.c-msg{margin:0;font-size:12.5px;color:var(--dim);min-height:1em}
+.c-msg.err{color:#c0392b}
+.c-recent li{flex-wrap:wrap}
+.c-recent .c-excerpt{color:var(--dim);font-size:13px;flex-basis:100%}
 """
 
 JS = """
@@ -394,6 +457,105 @@ JS = """
     document.querySelectorAll('.filter').forEach(x=>x.classList.remove('active'));
     b.classList.add('active'); topic=b.dataset.topic||''; apply();
   }));
+})();
+
+/* ── 留言 ──────────────────────────────────────────────
+   安全：使用者輸入（暱稱、內容、標題）一律用 textContent 插入，絕不用 innerHTML。
+   降級：本機 python http.server 沒有 /api，逾時或非 JSON 回應時顯示一行提示，不轉圈。 */
+(function(){
+  const OFFLINE='留言功能僅在線上版可用';
+  // 帶逾時的 JSON 請求；回應不是 JSON（例如本機 404 頁）就丟錯
+  async function api(path,opts){
+    const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),6000);
+    try{
+      const r=await fetch(path,Object.assign({signal:ctl.signal,headers:{'content-type':'application/json'}},opts||{}));
+      const ct=r.headers.get('content-type')||'';
+      if(!ct.includes('application/json')) throw new Error('offline');
+      const data=await r.json();
+      if(!r.ok) throw new Error(data.error||('HTTP '+r.status));
+      return data;
+    }finally{ clearTimeout(t); }
+  }
+  function el(tag,cls,text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+  const fmt=iso=>{ try{ return new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return iso; } };
+  const starStr=n=>'★'.repeat(n)+'☆'.repeat(5-n);
+  const clip=(s,k)=>{ const a=[...s]; return a.length>k? a.slice(0,k).join('')+'…' : s; };
+
+  // ── 筆記頁 ──
+  const box=document.getElementById('comments');
+  if(box){
+    const slug=box.dataset.slug;
+    const status=box.querySelector('.c-status'), list=box.querySelector('.c-list'), form=box.querySelector('.c-form');
+    const stat=document.getElementById('c-stat');
+    const nameI=form.querySelector('.c-name'), bodyI=form.querySelector('.c-body');
+    const count=form.querySelector('.c-count'), msg=form.querySelector('.c-msg'), submit=form.querySelector('.c-submit');
+    const stars=[...form.querySelectorAll('.star')];
+    let rating=null, comments=[];
+
+    function item(c){
+      const li=el('li','c-item'), head=el('div','c-head');
+      head.append(el('span','c-who',c.name||'訪客'), el('time',null,fmt(c.created_at)));
+      if(c.rating){ const s=el('span','c-stars',starStr(c.rating)); s.setAttribute('aria-label',c.rating+' 顆星'); head.append(s); }
+      li.append(head, el('p','c-text',c.body));
+      return li;
+    }
+    function renderStat(){
+      const rated=comments.filter(c=>c.rating);
+      let t=comments.length? comments.length+' 則留言' : '';
+      if(rated.length){ const avg=rated.reduce((a,c)=>a+c.rating,0)/rated.length; t+=' · 平均 ★'+avg.toFixed(1); }
+      stat.textContent=t;
+    }
+    function render(){
+      list.replaceChildren(...comments.map(item));
+      status.textContent=comments.length? '' : '還沒有留言，來當第一個。';
+      status.hidden=comments.length>0;
+      renderStat();
+    }
+    function setRating(v){
+      rating=v;
+      stars.forEach(b=>{ const on=v!=null && Number(b.dataset.v)<=v; b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(Number(b.dataset.v)===v)); });
+    }
+    stars.forEach(b=>b.addEventListener('click',()=>setRating(Number(b.dataset.v))));
+    form.querySelector('.star-clear').addEventListener('click',()=>setRating(null));
+    bodyI.addEventListener('input',()=>{ count.textContent=[...bodyI.value].length+' / 1000'; });
+
+    form.addEventListener('submit',async ev=>{
+      ev.preventDefault();
+      const body=bodyI.value.trim();
+      if(!body){ msg.textContent='內容不能是空的'; msg.className='c-msg err'; return; }
+      submit.disabled=true; msg.className='c-msg'; msg.textContent='送出中…';
+      try{
+        const d=await api('/api/comments',{method:'POST',body:JSON.stringify({slug,name:nameI.value,body,rating})});
+        comments.push(d.comment); render();
+        bodyI.value=''; count.textContent='0 / 1000'; setRating(null);
+        msg.textContent='已送出，謝謝！';
+      }catch(e){
+        msg.className='c-msg err';
+        msg.textContent= e.message==='offline'||e.name==='AbortError' ? OFFLINE : '送出失敗：'+e.message;
+      }finally{ submit.disabled=false; }
+    });
+
+    api('/api/comments?slug='+encodeURIComponent(slug))
+      .then(d=>{ comments=d.comments||[]; render(); form.hidden=false; })
+      .catch(()=>{ status.textContent=OFFLINE; });   // 表單維持隱藏，不顯示壞掉的畫面
+  }
+
+  // ── 首頁：最近留言 ──
+  const recent=document.getElementById('recent-comments');
+  if(recent){
+    const status=recent.querySelector('.c-status'), ul=recent.querySelector('.c-recent');
+    api('/api/comments/recent').then(d=>{
+      const cs=d.comments||[];
+      if(!cs.length){ status.textContent='還沒有留言。'; return; }
+      status.hidden=true;
+      ul.replaceChildren(...cs.map(c=>{
+        const li=el('li'), a=el('a',null,c.title||c.slug);
+        a.href='n/'+encodeURIComponent(c.slug)+'.html';
+        li.append(el('span','c-who',c.name||'訪客'), a, el('span','c-excerpt',clip(c.body,40)));
+        return li;
+      }));
+    }).catch(()=>{ status.textContent=OFFLINE; });
+  }
 })();
 """
 

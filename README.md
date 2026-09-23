@@ -102,6 +102,45 @@ Cloudflare Pages 自動 build（python scripts/build_site.py）→ 網站更新
 
 RSS：網站會產生 `feed.xml`（最新 30 則事件），各頁都有 autodiscovery，閱讀器貼網站網址就能訂閱。
 
+## 留言（Pages Functions + D1）
+網址只分享給朋友，所以設計成**簡單可靠優先**：不做 Turnstile、不做速率限制、不記錄 IP。
+不用 giscus／utterances（兩者都要求 repo 公開）或 Disqus（廣告與追蹤）。
+
+```
+瀏覽器（site/assets/app.js）──fetch──▶ /api/comments*（functions/，Cloudflare Pages Functions）──▶ D1（binding：DB）
+```
+
+| 檔案 | 作用 |
+|---|---|
+| `functions/api/comments/index.js` | `GET ?slug=` 該篇留言（時間正序）、`POST` 新增 |
+| `functions/api/comments/recent.js` | `GET` 全站最近 10 筆，附筆記標題（從網站自己的 `search.json` 對照） |
+| `functions/api/comments/[id].js` | `DELETE` 刪一則，需 `x-admin-token` |
+| `functions/_lib.js` | 共用工具（不是路由） |
+| `db/schema.sql` | D1 資料表，建一次 |
+
+- `functions/` 必須在 **repo 根目錄**（官方文件：放在專案根目錄，不是靜態輸出目錄），不用複製進 `site/`。Cloudflare 會在每次 build 時自動編譯。
+- **repo 根目錄不要放 `wrangler.toml`**：有它的話 Cloudflare 會以它為準，蓋掉 dashboard 上的 bindings 與變數。
+- 限制：內容必填、1000 字；暱稱 40 字（空的存 null，顯示「訪客」）；評分 1–5 可省略，評的是「這篇判讀」。只收網站上存在的筆記 slug。
+- 安全：前端一律用 `textContent` 插入留言，**不用 innerHTML**。
+- 本機 `run serve` 沒有 `/api`，留言區會顯示「留言功能僅在線上版可用」。
+
+### 刪留言
+先在網頁上找到留言的 id（或查 API），再帶 token 刪：
+
+```bash
+# 查某篇的留言與 id（slug＝檔名去掉 .md，中文要 URL 編碼）
+curl -s "https://blockchain-vault-cvm.pages.dev/api/comments?slug=2026-09-08-fincen-vdc-cip-faq"
+
+# 刪 id 12
+curl -X DELETE https://blockchain-vault-cvm.pages.dev/api/comments/12 \
+  -H "x-admin-token: <你的 ADMIN_TOKEN>"
+# → {"deleted":12}；token 錯 403，id 不存在 404
+```
+
+PowerShell 版：`Invoke-RestMethod -Method Delete -Uri https://blockchain-vault-cvm.pages.dev/api/comments/12 -Headers @{"x-admin-token"="<token>"}`
+
+也可以直接在 Cloudflare D1 Console 下 SQL：`DELETE FROM comments WHERE id = 12;`
+
 ## Obsidian
 Open folder as vault → 選這個資料夾。四個設定：
 - Files & Links → Default location for new notes：`00-inbox`
