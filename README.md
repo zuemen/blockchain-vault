@@ -158,6 +158,30 @@ PowerShell 版：`Invoke-RestMethod -Method Delete -Uri https://blockchain-vault
 
 也可以直接在 Cloudflare D1 Console 下 SQL：`DELETE FROM comments WHERE id = 12;`
 
+### 用 wrangler 維運（不必進 dashboard）
+先 `npx wrangler login`（要在自己的終端機跑，瀏覽器授權有 120 秒時限），之後：
+
+```bash
+# 看遠端資料表／索引
+npx wrangler d1 execute blockchain-vault-comments --remote --command "SELECT name,type,sql FROM sqlite_master;"
+# 建索引（冪等）
+npx wrangler d1 execute blockchain-vault-comments --remote --command "CREATE INDEX IF NOT EXISTS idx_comments_slug ON comments(slug);"
+# 換 ADMIN_TOKEN（新值下一次部署生效）
+python -c "import secrets;print(secrets.token_urlsafe(32))" | npx wrangler pages secret put ADMIN_TOKEN --project-name blockchain-vault
+# 看部署狀態（Failure 就去 dashboard 的 Build 連結看 log）
+npx wrangler pages deployment list --project-name blockchain-vault
+```
+
+`wrangler d1 execute` 會在 repo 根目錄留下 `.wrangler/` 暫存資料夾，已加進 `.gitignore`。
+
+上線紀錄（2026-09-24）：D1 `blockchain-vault-comments` 已建表＋索引、production 已綁 `DB`、`ADMIN_TOKEN` 已設；四支 API 線上驗證通過。
+沒有採用 repo 內 `wrangler.toml` 宣告 binding：官方文件確認 Pages 支援（需 `pages_build_output_dir`），但它會成為 bindings／變數的唯一來源，而且 build 用的 `PYTHON_VERSION` 是否仍讀 dashboard 文件沒寫明，binding 又已在 dashboard 完成，沒必要冒這個險。
+
+### 已知問題：Pages build 偶發失敗
+`PYTHON_VERSION=3.12` 會讓 build image 每次下載編譯 Python 3.12.12（約 85 秒）。2026-09-24 有一次 build 失敗，log 是
+`python 3.12.12 not found in image, updating plugin and retrying...` 接著 `fatal: could not read Username for 'https://github.com'`，
+屬 Cloudflare build image 那一側的問題。處理：dashboard → Deployments → Retry，或隨便 push 一個 commit 重建。若持續發生，把 `PYTHON_VERSION` 改成 image 預裝的 `3.11.5`（程式 3.10 以上都能跑）。
+
 ## Obsidian
 Open folder as vault → 選這個資料夾。四個設定：
 - Files & Links → Default location for new notes：`00-inbox`
