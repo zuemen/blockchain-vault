@@ -70,19 +70,37 @@ Cloudflare Pages 自動 build（python scripts/build_site.py）→ 網站更新
 細節與調權重：`scripts/README.md`。網站產生器：`scripts/build_site.py`（純 Python，無 npm）。
 
 ## 上線（一次性，Cloudflare Pages）
-1. 建私有 repo 並推上去：
+1. 建私有 repo 並推上去（已完成：`zuemen/blockchain-vault`）：
    ```bash
    gh repo create blockchain-vault --private --source=. --push
    ```
 2. GitHub repo → Settings → Actions → General → Workflow permissions 勾 **Read and write permissions**（否則 bot 推不上事件卡）。
-3. Cloudflare dashboard → Workers & Pages → Create → Pages → **Connect to Git** → 授權並選這個私有 repo：
-   - Build command：`pip install feedparser pyyaml markdown && python scripts/build_site.py`
-   - Build output directory：`site`
-   - 環境變數 `SITE_URL`：設成部署後的網址（例：`https://blockchain-vault.pages.dev`），RSS 的連結才會是絕對網址。第一次部署完拿到網址再回來補，然後 Retry deployment。
-4. （可選）Cloudflare Zero Trust → Access → 對這個網域加一條 Application，只允許你的 email（一次性驗證碼登入），網站就只有你看得到。
+3. Cloudflare dashboard → Workers & Pages → Create → Pages → **Connect to Git** → 授權 GitHub 並選 `zuemen/blockchain-vault`，設定值：
 
-RSS：網站會產生 `feed.xml`（最新 30 則事件），首頁有 autodiscovery，閱讀器貼網站網址就能訂閱。
-若開了 Cloudflare Access，外部 RSS 閱讀器會被擋在登入頁外——要訂閱就得對 `/feed.xml` 另開 bypass 規則，或接受只在本機看。
+   | 欄位 | 值 |
+   |---|---|
+   | Production branch | `main` |
+   | Framework preset | **None** |
+   | Build command | `python -m pip install pyyaml markdown && python scripts/build_site.py` |
+   | Build output directory | `site` |
+   | Root directory | 留空 |
+   | 環境變數 `PYTHON_VERSION` | `3.12`（鎖定版本，不受 Cloudflare 預設版本變動影響；程式在 3.10 以上都能跑） |
+   | 環境變數 `SITE_URL` | 第一次先**不設**；部署完拿到網址後再補（見第 4 步） |
+
+   Build command 只裝 `pyyaml markdown`：建站用不到 `feedparser`（那是抓新聞用的，在 Actions 上裝）。
+   用 `python -m pip` 而不是 `pip`，確保套件裝進 `PYTHON_VERSION` 指定的那個 Python。
+4. **第一次部署完成後**：拿到網址（例：`https://blockchain-vault.pages.dev`）→ Settings → Variables and Secrets → 加 `SITE_URL`（**結尾不要斜線**，程式會自動去掉但仍建議不加）→ Deployments → 最新一筆 **Retry deployment**。
+   不補的話網站照常運作，只是 `feed.xml` 裡的連結是相對路徑，RSS 閱讀器點不開。
+5. （可選）只讓自己看得到：Cloudflare Zero Trust → Access → Applications → Add → **Self-hosted**
+   - Domain：`blockchain-vault.pages.dev`，**再加一條** `*.blockchain-vault.pages.dev`（每次部署的預覽網址長這樣，不擋的話筆記一樣會外流）
+   - Policy：Action **Allow**，Include → Emails → 你的 email（登入方式：One-time PIN）
+6. （開了第 5 步才需要）讓 RSS 能訂閱：再建一個 Self-hosted application
+   - Domain：`blockchain-vault.pages.dev`，Path：`feed.xml`
+   - Policy：Action **Bypass**，Include → **Everyone**
+   - 路徑較精確的 application 優先，所以只有 `/feed.xml` 公開，其餘頁面仍需登入。
+   - 代價：事件標題與「一句話」會公開（RSS 本來就包含這些）。不能接受就別開 bypass，只在網站上看。
+
+RSS：網站會產生 `feed.xml`（最新 30 則事件），各頁都有 autodiscovery，閱讀器貼網站網址就能訂閱。
 
 ## Obsidian
 Open folder as vault → 選這個資料夾。四個設定：
