@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="1.0">
+  <head><title>Blockchain / Digital Assets — Zuemen</title></head>
+  <body>
+    <outline text="一手監理源" title="一手監理源">
+      <outline type="rss" text="FinCEN News" title="FinCEN News" xmlUrl="https://www.fincen.gov/news/news-releases/feed"/>
+      <outline type="rss" text="SEC Press Releases" title="SEC Press Releases" xmlUrl="https://www.sec.gov/news/pressreleases.rss"/>
+      <outline type="rss" text="OCC News" title="OCC News" xmlUrl="https://www.occ.gov/rss/occ-news-issuances.xml"/>
+      <outline type="rss" text="Federal Reserve Press" title="Federal Reserve Press" xmlUrl="https://www.federalreserve.gov/feeds/press_all.xml"/>
+      <outline type="rss" text="BIS Papers" title="BIS Papers" xmlUrl="https://www.bis.org/list/bispapers/rss.xml"/>
+      <outline type="rss" text="HKMA Press Releases" title="HKMA Press Releases" xmlUrl="https://www.hkma.gov.hk/eng/rss/press_releases.xml"/>
+      <outline type="rss" text="SFC Hong Kong" title="SFC Hong Kong" xmlUrl="https://apps.sfc.hk/edistributionWeb/api/rss/news?lang=EN"/>
+      <outline type="rss" text="MAS Singapore" title="MAS Singapore" xmlUrl="https://www.mas.gov.sg/rss/news"/>
+      <outline type="rss" text="ESMA" title="ESMA" xmlUrl="https://www.esma.europa.eu/rss.xml"/>
+    </outline>
+    <outline text="中文媒體" title="中文媒體">
+      <outline type="rss" text="動區動趨" title="動區動趨" xmlUrl="https://www.blocktempo.com/feed/"/>
+      <outline type="rss" text="鏈新聞 ABMedia" title="鏈新聞 ABMedia" xmlUrl="https://abmedia.io/feed"/>
+    </outline>
+    <outline text="英文媒體" title="英文媒體">
+      <outline type="rss" text="CoinDesk" title="CoinDesk" xmlUrl="https://www.coindesk.com/arc/outboundfeeds/rss/"/>
+      <outline type="rss" text="The Block" title="The Block" xmlUrl="https://www.theblock.co/rss.xml"/>
+      <outline type="rss" text="Ledger Insights" title="Ledger Insights" xmlUrl="https://www.ledgerinsights.com/feed/"/>
+      <outline type="rss" text="Cointelegraph" title="Cointelegraph" xmlUrl="https://cointelegraph.com/rss"/>
+      <outline type="rss" text="Finextra Blockchain" title="Finextra Blockchain" xmlUrl="https://www.finextra.com/rss/channel.aspx?channel=blockchain"/>
+    </outline>
+  </body>
+</opml>

@@ -1,0 +1,73 @@
+# 來源清單。tier 決定評分加權：primary > trade > aggregator
+# primary = 監理機關、央行、公司 IR。這層最值錢，別人都不抓。
+
+primary:
+  - name: FinCEN News
+    url: https://www.fincen.gov/news/news-releases/feed
+  - name: SEC Press Releases
+    url: https://www.sec.gov/news/pressreleases.rss
+  - name: OCC News
+    url: https://www.occ.gov/rss/occ-news-issuances.xml
+  - name: Federal Reserve Press
+    url: https://www.federalreserve.gov/feeds/press_all.xml
+  - name: BIS Publications
+    url: https://www.bis.org/list/bispapers/rss.xml
+  - name: HKMA Press Releases
+    url: https://www.hkma.gov.hk/eng/rss/press_releases.xml
+  - name: SFC HK News
+    url: https://apps.sfc.hk/edistributionWeb/api/rss/news?lang=EN
+  - name: MAS Singapore
+    url: https://www.mas.gov.sg/rss/news
+  - name: ESMA
+    url: https://www.esma.europa.eu/rss.xml
+  # 台灣：金管會沒有穩定的 RSS，用新聞稿頁面 scrape（見 fetch_news.py 的 html_sources）
+
+trade:
+  - name: 動區動趨
+    url: https://www.blocktempo.com/feed/
+  - name: 鏈新聞 ABMedia
+    url: https://abmedia.io/feed
+  - name: CoinDesk
+    url: https://www.coindesk.com/arc/outboundfeeds/rss/
+  - name: The Block
+    url: https://www.theblock.co/rss.xml
+  - name: Ledger Insights
+    url: https://www.ledgerinsights.com/feed/
+  - name: Cointelegraph
+    url: https://cointelegraph.com/rss
+  - name: Finextra Blockchain
+    url: https://www.finextra.com/rss/channel.aspx?channel=blockchain
+
+# 主題權重：命中越多、權重越高的詞，score 越高
+weights:
+  ZK: 3
+  零知識: 3
+  zero-knowledge: 3
+  zk-proof: 3
+  SSI: 3
+  DID: 3
+  verifiable credential: 3
+  可驗證憑證: 3
+  數位身分: 2
+  RWA: 3
+  tokeniz: 2
+  代幣化: 2
+  stablecoin: 2
+  穩定幣: 2
+  settlement: 2
+  結算: 2
+  DvP: 3
+  wCBDC: 3
+  CBDC: 2
+  regulation: 2
+  法規: 2
+  監理: 2
+  金管會: 3
+  FSC: 1
+  HKMA: 2
+  SFC: 2
+  FinCEN: 3
+  SEC: 2
+  BIS: 2
+  custody: 1
+  託管: 1
