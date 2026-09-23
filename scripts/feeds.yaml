@@ -20,6 +20,24 @@ primary:
     url: https://www.mas.gov.sg/rss/news
   - name: ESMA
     url: https://www.esma.europa.eu/rss.xml
+  # ── 國際一手源（2026-09-23 逐一實抓驗證）──
+  - name: ECB Press
+    url: https://www.ecb.europa.eu/rss/press.html        # 含訪談、演講，不只新聞稿
+  - name: Bank of England News
+    url: https://www.bankofengland.co.uk/rss/news
+  - name: FSB
+    url: https://www.fsb.org/feed/                        # 全站 feed；/press/feed/ 已停更
+  - name: CFTC Press Releases
+    url: https://www.cftc.gov/RSS/RSSGP/rssgp.xml
+  - name: FDIC Press Releases
+    url: https://public.govdelivery.com/topics/USFDIC_26/feed.rss   # 官方託管在 GovDelivery；fdic.gov/rss.xml 只有理事會開會通知
+  - name: Japan FSA (EN)
+    url: https://www.fsa.go.jp/fsaEnNewsList_rss2.xml
+  - name: EBA News
+    url: https://www.eba.europa.eu/news-press/news/rss.xml  # /rss.xml 是 e-mail alert，排序錯亂，別用
+  # 查無穩定 feed，暫不收：
+  #   IMF（imf.org 整站被 Akamai 403 擋）、IOSCO（/rss/rss.xml 自 2023-05 停更）、
+  #   韓國 FSC 英文版（只有韓文 fid=0111，回應 20 秒以上且日期格式非標準）
   # 台灣：金管會沒有穩定的 RSS，用新聞稿頁面 scrape（見 fetch_news.py 的 html_sources）
 
 trade:
@@ -37,6 +55,9 @@ trade:
     url: https://cointelegraph.com/rss
   - name: Finextra Blockchain
     url: https://www.finextra.com/rss/channel.aspx?channel=blockchain
+  - name: Chainalysis Blog
+    url: https://www.chainalysis.com/blog/feed/
+  # Galaxy Research：官網無 RSS/Atom（各路徑皆 404），暫不收
 
 # 主題權重：命中越多、權重越高的詞，score 越高
 weights:

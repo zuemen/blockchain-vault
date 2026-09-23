@@ -24,6 +24,7 @@ EVENTS = ROOT / "10-events"
 DAILY = ROOT / "99-daily"
 CFG = yaml.safe_load((Path(__file__).parent / "feeds.yaml").read_text(encoding="utf-8"))
 TZ = dt.timezone(dt.timedelta(hours=8))          # Asia/Taipei
+FEED_STATS = {}   # 來源名稱 → (feed 總則數, 時間窗內則數, 錯誤訊息)；dry-run 時印出健康度
 
 TIER_BONUS = {"primary": 4, "trade": 0, "aggregator": -2}
 
@@ -207,7 +208,13 @@ def collect(hours):
                 fp = feedparser.parse(src["url"])
             except Exception as e:
                 print(f"  ! {src['name']} 抓取失敗：{e}", file=sys.stderr)
+                FEED_STATS[src["name"]] = (0, 0, str(e))
                 continue
+            status = fp.get("status")
+            err = f"HTTP {status}" if status and status >= 400 else ""
+            if not fp.entries and fp.get("bozo"):
+                err = err or f"解析失敗：{fp.get('bozo_exception')}"
+            in_window = 0
             for e in fp.entries:
                 st = e.get("published_parsed") or e.get("updated_parsed")
                 if st:
@@ -216,12 +223,14 @@ def collect(hours):
                         continue
                 else:
                     when = dt.datetime.now(dt.timezone.utc)
+                in_window += 1
                 title = (e.get("title") or "").strip()
                 summary = re.sub(r"<[^>]+>", " ", e.get("summary", ""))[:800]
                 sc, hits = score(title, summary, tier)
                 items.append(dict(title=title, url=e.get("link", ""), source=src["name"],
                                   tier=tier, when=when.astimezone(TZ), score=sc,
                                   hits=hits, summary=summary.strip()))
+            FEED_STATS[src["name"]] = (len(fp.entries), in_window, err)
     # 事件級去重：不同媒體報導同一件事只留一則，保留分數高者（等於優先一手來源）
     return sorted(dedup(items), key=lambda x: -x["score"])
 
@@ -296,6 +305,10 @@ def main():
             lines.append(f"- [[{p.stem}]] — score {it['score']} — {tag}命中：{reason}")
 
     if a.dry_run:
+        print(f"\n── 來源健康度（feed 總則數／{a.hours} 小時內）──")
+        for name, (total, win, err) in FEED_STATS.items():
+            flag = "✗ 抓不到" if total == 0 else ("· 時間窗內無新文" if win == 0 else "✓")
+            print(f"  {flag:<10} {name:<24} {total:>3}／{win:<3} {err}")
         if skipped:
             print(f"\n── 已有事件卡、略過 {len(skipped)} 則 ──")
             for it, match in skipped:
