@@ -1,7 +1,7 @@
 ---
 type: event
 date: 2026-09-22
-title: Saudi Arabia exits China-backed mBridge CBDC project: FT
+title: "Saudi Arabia exits China-backed mBridge CBDC project: FT"
 source_url: https://cointelegraph.com/news/saudi-arabia-exits-china-backed-mbridge-cbdc-project-ft?utm_source=rss_feed&utm_medium=rss&utm_campaign=rss_partner_inbound
 source_name: Cointelegraph
 source_tier: trade

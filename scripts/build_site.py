@@ -15,6 +15,7 @@ from pathlib import Path
 
 try:
     import yaml, markdown
+    import tracker          # 各國進度的分類規則（scripts/tracker.py）
 except ImportError:
     sys.exit("請先安裝：pip install pyyaml markdown")
 
@@ -89,7 +90,7 @@ def collect():
                 source_name=fm.get("source_name", ""), source_url=fm.get("source_url", ""),
                 source_tier=fm.get("source_tier", ""), score=fm.get("score", ""),
                 maturity=fm.get("maturity", ""), jurisdiction=fm.get("jurisdiction", ""),
-                regulator=fm.get("regulator", ""), status=fm.get("status", ""),
+                regulator=fm.get("regulator", ""), status=fm.get("status", ""), stage=fm.get("stage", ""), tracks=fm.get("tracks"),
                 body=body, links=[], backlinks=[],
             )
     return notes
@@ -214,7 +215,7 @@ def shell(title, body, depth=0, desc=SITE_DESC, masthead=False):
     else:
         top = f"""<header class="bar">
   <a class="bar-brand" href="{up}index.html">Blockchain <em>Vault</em></a>
-  <span class="bar-tag">ZK · SSI · RWA · 金融法規</span>
+  <nav class="bar-nav"><a href="{up}index.html">頭版</a><a href="{up}tracker.html">各國進度</a></nav>
 </header>"""
     return f"""<!doctype html>
 <html lang="zh-Hant">
@@ -247,7 +248,7 @@ def shell(title, body, depth=0, desc=SITE_DESC, masthead=False):
 """
 
 
-def build_index(notes):
+def build_index(notes, cells):
     events = [n for n in notes.values() if n["folder"] == "10-events"]
     by_title = lambda x: x["title"]
     concepts = sorted([n for n in notes.values() if n["folder"] == "20-concepts"], key=by_title)
@@ -327,12 +328,19 @@ def build_index(notes):
     body = f"""
 <nav class="toolbar">
   <div class="filters"><button class="filter active" data-topic="">全部</button>{chips}</div>
-  <input id="q" type="search" placeholder="搜尋標題、內容、主題…" autocomplete="off">
+  <div class="tool-right"><a class="nav-link" href="tracker.html">各國進度 →</a>
+  <input id="q" type="search" placeholder="搜尋標題、內容、主題…" autocomplete="off"></div>
 </nav>
 <div id="results" class="hidden"></div>
 
 <div id="main-view">
 {front}
+  <section class="progress">
+    <h2 class="sec-h"><span>各國進度</span></h2>
+    {tracker_matrix(cells, "tracker.html", compact=True)}
+    <p class="more"><a href="tracker.html">看各國時間軸與依據的法規 →</a></p>
+  </section>
+
   <section class="briefs">
     <h2 class="sec-h"><span>簡訊</span></h2>
     <ul>{''.join(brief_html(n) for n in briefs)}</ul>
@@ -407,6 +415,11 @@ def build_notes(notes):
             byline.append(f'<span class="mat mat-{esc(n["maturity"])}">{esc(n["maturity"])}</span>')
         if n["jurisdiction"]:
             byline.append(f'<span class="mat">{esc(n["jurisdiction"])}</span>')
+        if n["folder"] == "40-regulations":
+            st = tracker.stage_of(n)
+            if st:
+                byline.append(f'<a class="mat stage-link" href="../tracker.html">{stage_meter(st)}'
+                              f'{esc(tracker.STAGES[st])}</a>')
 
         body = f"""
 <article class="note">
@@ -422,6 +435,97 @@ def build_notes(notes):
 """
         (nd / f"{n['slug']}.html").write_text(
             shell(f"{n['title']} — {SITE_TITLE}", body, 1, excerpt(n, 120)), encoding="utf-8")
+
+
+# ── 各國進度 ──────────────────────────────────────────────
+
+def cell_id(country, track):
+    return "t-" + urllib.parse.quote(f"{country}-{track}", safe="")
+
+
+def stage_meter(stage):
+    segs = "".join(f'<i class="{"on" if i < stage else ""}"></i>' for i in range(5))
+    return f'<span class="meter" aria-hidden="true">{segs}</span>'
+
+
+def tracker_matrix(cells, prefix="", compact=False):
+    """國家 × 議題矩陣。prefix 是連到 tracker.html 的相對路徑（首頁用 "tracker.html"，本頁用 ""）。"""
+    countries = [c for c, _ in tracker.COUNTRIES if any((c, t) in cells for t, _ in tracker.TRACKS)]
+    tracks = [t for t, _ in tracker.TRACKS]
+    head = "".join(f'<th scope="col">{esc(t)}</th>' for t in tracks)
+    rows = []
+    for c in countries:
+        tds = []
+        for t in tracks:
+            cell = cells.get((c, t))
+            if not cell:
+                tds.append('<td class="empty"><span>—</span></td>')
+                continue
+            st, n_ev = cell["stage"], len(cell["events"])
+            label = tracker.STAGES.get(st, "")
+            hint = tracker.STAGE_HINT.get(st, "尚無法規筆記，只有新聞動態")
+            parts = [stage_meter(st),
+                     f'<b class="lv-label">{esc(label) if st else "動態觀察"}</b>']
+            if not compact and cell["stage_note"] is not None:
+                parts.append(f'<span class="basis">{esc(cell["stage_note"]["title"])}</span>')
+            if n_ev:
+                latest = cell["events"][0]["date"][5:]
+                parts.append(f'<span class="ev">動態 {n_ev}・{esc(latest)}</span>')
+            tds.append(f'<td class="lv{st}" title="{esc(hint)}"><a href="{prefix}#{cell_id(c, t)}">{"".join(parts)}</a></td>')
+        rows.append(f'<tr><th scope="row"><a href="{prefix}#{cell_id(c, "")}">{esc(c)}</a></th>{"".join(tds)}</tr>')
+    return (f'<div class="matrix-wrap"><table class="matrix{" compact" if compact else ""}">'
+            f'<thead><tr><th></th>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
+
+
+def stage_legend():
+    items = "".join(f'<li>{stage_meter(s)}<b>{esc(name)}</b><span>{esc(tracker.STAGE_HINT[s])}</span></li>'
+                    for s, name in tracker.STAGES.items())
+    return f'<ul class="legend">{items}</ul>'
+
+
+def build_tracker(notes, cells):
+    countries = [c for c, _ in tracker.COUNTRIES if any((c, t) in cells for t, _ in tracker.TRACKS)]
+    sections = []
+    for c in countries:
+        blocks = []
+        for t, _ in tracker.TRACKS:
+            cell = cells.get((c, t))
+            if not cell:
+                continue
+            st = cell["stage"]
+            regs = "".join(
+                f'<li class="reg"><span class="when">法規</span>'
+                f'<a href="{url_for(r["slug"])}">{esc(r["title"])}</a>'
+                f'<span class="st">{stage_meter(tracker.stage_of(r))}{esc(r["status"])}</span></li>'
+                for r in cell["regs"])
+            evs = "".join(
+                f'<li><time class="when">{esc(e["date"])}</time><a href="{url_for(e["slug"])}">{esc(e["title"])}</a>'
+                f'<span class="st">{esc(e["source_name"])}{signal(score_of(e))}</span></li>'
+                for e in cell["events"][:12])
+            more = f'<p class="note">另有 {len(cell["events"]) - 12} 則較舊動態，可用首頁搜尋。</p>' if len(cell["events"]) > 12 else ""
+            if not regs:
+                regs = '<li class="reg missing"><span class="when">法規</span><span>尚無法規筆記，階段待判定</span></li>'
+            blocks.append(f"""<section class="track" id="{cell_id(c, t)}">
+  <h3>{esc(t)}<span class="lvl lv{st}">{stage_meter(st)}{esc(tracker.STAGES.get(st, "動態觀察"))}</span></h3>
+  <ul class="timeline">{regs}{evs}</ul>{more}
+</section>""")
+        sections.append(f'<section class="country" id="{cell_id(c, "")}"><h2 class="sec-h"><span>{esc(c)}</span></h2>{"".join(blocks)}</section>')
+
+    body = f"""
+<article class="tracker">
+  <p class="crumb"><a href="index.html">← 頭版</a><span>各國進度</span></p>
+  <h1>各國推動進度</h1>
+  <p class="note-deck">同一件事在不同國家走到哪一步。階段由法規筆記判定（status 自動換算，或 frontmatter 寫 stage: 1–5 覆寫）；
+  新聞只當動態，不自動改階段。</p>
+  <p class="howto">補一格的階段：<code>python scripts/new_note.py regulation "美國-穩定幣法案"</code>，
+  frontmatter 填 <code>jurisdiction</code>、<code>status</code>、<code>topics</code>（議題判斷不準時加 <code>tracks: [穩定幣]</code>）。</p>
+  {stage_legend()}
+  {tracker_matrix(cells, "", compact=False)}
+  {"".join(sections)}
+</article>
+"""
+    (OUT / "tracker.html").write_text(shell(f"各國進度 — {SITE_TITLE}", body, 0,
+                                            "ZK、SSI、RWA、穩定幣在各國的推動階段與最新動態"), encoding="utf-8")
 
 
 def build_search(notes):
@@ -657,6 +761,74 @@ article.note .byline{padding:10px 0;border-top:1px solid var(--rule);border-bott
 .colophon em{color:var(--red)}
 .colophon a{border-bottom:1px solid var(--hair)}
 
+/* ── 各國進度 ── */
+.bar-nav{margin-left:auto;display:flex;gap:18px;font:500 13px var(--sans)}
+.bar-nav a{color:var(--ink-2)}
+.bar-nav a:hover{color:var(--red)}
+.tool-right{display:flex;gap:18px;align-items:center;flex:0 1 auto}
+.nav-link{font:600 14px var(--serif);color:var(--red);white-space:nowrap}
+.meter{display:inline-flex;gap:2px;vertical-align:middle}
+.meter i{display:block;width:9px;height:9px;border:1px solid var(--red);opacity:.35}
+.meter i.on{background:var(--red);opacity:1}
+.progress{margin-bottom:40px}
+.progress .more{margin:10px 0 0;text-align:right;font:600 14px var(--serif)}
+.progress .more a{color:var(--red)}
+.matrix-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.matrix{border-collapse:collapse;width:100%;min-width:760px;table-layout:fixed}
+.matrix th,.matrix td{border-bottom:1px solid var(--hair);border-right:1px solid var(--hair);padding:0;vertical-align:top;text-align:left}
+.matrix tr>*:last-child{border-right:0}
+.matrix tbody tr:last-child>*{border-bottom:0}
+.matrix thead th{font:500 11px/1.3 var(--mono);letter-spacing:.12em;color:var(--red);padding:10px 12px}
+.matrix thead th:first-child{width:86px}
+.matrix tbody th{font:900 17px/1.3 var(--serif);padding:12px;position:sticky;left:0;background:var(--paper);z-index:1}
+.matrix td a{display:flex;flex-direction:column;gap:4px;padding:11px 12px;height:100%;min-height:72px;color:var(--ink)}
+.matrix td a:hover{background:var(--card)}
+.matrix td a:hover .lv-label{color:var(--red)}
+.matrix .lv-label{font:700 14px/1.3 var(--serif)}
+.matrix .basis{font:400 12px/1.45 var(--sans);color:var(--ink-2)}
+.matrix .ev{font:400 11px var(--mono);color:var(--dim)}
+.matrix td.empty span{display:block;padding:11px 12px;color:var(--hair)}
+/* 階段越後面底色越深：熱度圖 */
+.matrix td.lv0{background:transparent}
+.matrix td.lv1{background:color-mix(in srgb,var(--red) 4%,transparent)}
+.matrix td.lv2{background:color-mix(in srgb,var(--red) 8%,transparent)}
+.matrix td.lv3{background:color-mix(in srgb,var(--red) 13%,transparent)}
+.matrix td.lv4{background:color-mix(in srgb,var(--red) 19%,transparent)}
+.matrix td.lv5{background:color-mix(in srgb,var(--red) 26%,transparent)}
+.matrix td.lv0 .lv-label{font-weight:400;color:var(--dim)}
+.matrix.compact td a{min-height:56px}
+.legend{list-style:none;margin:0 0 22px;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.legend li{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim);line-height:1.5}
+.legend b{font:700 14px var(--serif);color:var(--ink)}
+.tracker{max-width:1180px;margin:30px auto 0}
+.tracker h1{font:900 clamp(30px,4.6vw,46px)/1.2 var(--serif);margin:6px 0 14px}
+.tracker .note-deck{max-width:46em}
+.country{margin-top:44px;scroll-margin-top:16px}
+.track{margin:0 0 26px;scroll-margin-top:16px}
+.track h3{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font:700 18px var(--serif);margin:0 0 8px;
+  padding-bottom:6px;border-bottom:1px solid var(--rule)}
+.lvl{display:inline-flex;gap:8px;align-items:center;font:500 12px var(--mono);color:var(--red)}
+.timeline{list-style:none;margin:0;padding:0}
+.timeline li{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:4px 14px;align-items:baseline;
+  padding:8px 0;border-bottom:1px dotted var(--hair)}
+.timeline .when{font:400 11.5px var(--mono);color:var(--dim)}
+.timeline li a{font:600 15px/1.5 var(--serif)}
+.timeline .st{display:inline-flex;gap:8px;align-items:center;font:400 11.5px var(--sans);color:var(--dim);white-space:nowrap}
+.timeline li.reg{background:color-mix(in srgb,var(--red) 6%,transparent);padding-left:8px;padding-right:8px;border-left:3px solid var(--red)}
+.timeline li.reg .when{color:var(--red)}
+.timeline li.missing{background:none;border-left:3px dotted var(--miss);color:var(--dim);font-size:13px}
+.howto{font-size:13px;color:var(--dim);margin:-6px 0 18px}
+.howto code,.timeline code{font:12px var(--mono);background:var(--paper-2);padding:1px 5px}
+.stage-link{display:inline-flex;gap:6px;align-items:center;color:var(--red)!important}
+@media (max-width:720px){
+  .tool-right{flex-direction:column;align-items:stretch;gap:8px}
+  .nav-link{text-align:right}
+  .legend{grid-template-columns:1fr 1fr}
+  .timeline li{grid-template-columns:1fr}
+  .timeline .st{white-space:normal;flex-wrap:wrap}
+  .bar-nav{margin-left:0;width:100%}
+}
+
 /* ── 響應式 ── */
 @media (max-width:980px){
   .front{grid-template-columns:1fr}
@@ -890,7 +1062,9 @@ def main():
         shutil.rmtree(child) if child.is_dir() else child.unlink()
     (OUT / "assets").mkdir(parents=True)
     notes = resolve_links(collect())
-    build_index(notes)
+    cells = tracker.build_matrix(notes)
+    build_index(notes, cells)
+    build_tracker(notes, cells)
     build_notes(notes)
     build_search(notes)
     n_feed = build_feed(notes)

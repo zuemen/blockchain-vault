@@ -11,7 +11,7 @@
 
 相依：pip install feedparser pyyaml
 """
-import argparse, datetime as dt, hashlib, os, re, sys, unicodedata
+import argparse, datetime as dt, hashlib, json, os, re, sys, unicodedata
 import socket, time
 from pathlib import Path
 
@@ -158,14 +158,29 @@ def same_event(a, b) -> bool:
     return jaccard(a, b) >= DEDUP_THRESHOLD
 
 
+def read_frontmatter(text):
+    """解析筆記開頭的 YAML frontmatter；壞掉就回傳空 dict。"""
+    m = re.match(r"^---\s*\n(.*?)\n---", text, re.S)
+    if not m:
+        return {}
+    try:
+        return yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError:
+        return {}
+
+
+def yq(v) -> str:
+    """寫 YAML 用的雙引號字串（JSON 字串即合法 YAML）。
+    標題常含冒號（"...project: FT"），不加引號會讓整個 frontmatter 解析失敗。"""
+    return json.dumps(str(v), ensure_ascii=False)
+
+
 def existing_events():
     """已存在的事件卡：回傳 [(標題, 關鍵詞集合)]，供跨日去重。"""
     out = []
     for f in EVENTS.glob("*.md"):
-        head = f.read_text(encoding="utf-8")[:600]
-        mt = re.search(r"^title:\s*(.+)$", head, re.M)
-        if mt:
-            title = mt.group(1).strip()
+        title = str(read_frontmatter(f.read_text(encoding="utf-8")).get("title") or "").strip()
+        if title:
             out.append((title, title_tokens(title)))
     return out
 
@@ -251,9 +266,9 @@ def write_event(it):
     body = f"""---
 type: event
 date: {date}
-title: {it['title']}
-source_url: {it['url']}
-source_name: {it['source']}
+title: {yq(it['title'])}
+source_url: {yq(it['url'])}
+source_name: {yq(it['source'])}
 source_tier: {it['tier']}
 topics: [{topics}]
 entities: []
@@ -294,17 +309,18 @@ def rescore_existing(dry_run=False):
         fm = re.match(r"^---\n(.*?)\n---\n", txt, re.S)
         if not fm or not re.search(r"^auto:\s*true\s*$", fm.group(1), re.M):
             continue
-        title = re.search(r"^title:\s*(.+)$", fm.group(1), re.M)
-        tier = re.search(r"^source_tier:\s*(\S+)", fm.group(1), re.M)
+        meta = read_frontmatter(txt)
+        title_s = str(meta.get("title") or "").strip()
+        tier_s = str(meta.get("source_tier") or "trade")
         old = re.search(r"^score:\s*(-?\d+)", fm.group(1), re.M)
         facts = re.search(r"^## 事實[^\n]*\n(.*?)(?=^##\s|\Z)", txt, re.S | re.M)
         summary = re.sub(r"^\s*-\s*", "", facts.group(1).strip(), flags=re.M) if facts else ""
-        if not (title and old):
+        if not (title_s and old):
             continue
-        new, _ = score(title.group(1).strip(), summary, tier.group(1) if tier else "trade")
+        new, _ = score(title_s, summary, tier_s)
         if new != int(old.group(1)):
             changed += 1
-            print(f"  {int(old.group(1)):>3} → {new:>3}  {title.group(1).strip()[:56]}")
+            print(f"  {int(old.group(1)):>3} → {new:>3}  {title_s[:56]}")
             if not dry_run:
                 head = fm.group(1)
                 head = re.sub(r"^score:\s*-?\d+", f"score: {new}", head, count=1, flags=re.M)
