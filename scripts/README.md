@@ -66,3 +66,8 @@ python3 scripts/fetch_news.py --top 8       # 真的寫入 vault
 
 ## 雜訊詞
 `feeds.yaml` 的 `noise` 清單（晚宴、酒會、峰會、空投、AMA…），**每命中一個扣 6 分**。活動宣傳稿通常同時出現好幾個，會被扣到負分。
+
+## 數量與門檻
+- 每天最多寫 `--top 15` 則，且只收 **≥ `--min-score 3`** 分的（至少命中核心主題、不是宣傳稿）。來源多、中文快訊量大，靠門檻過濾而不是靠少收來源。
+- 每個來源 20 秒逾時（`socket.setdefaulttimeout`），超過 10 秒的在 dry-run 健康度標「慢」。
+- 評分規則改過之後，跑 `python scripts/fetch_news.py --rescore`（先加 `--dry-run` 試算）重算既有自動卡的分數，頭版排序才會一致。只動 `auto: true` 卡的 `score` 一行。

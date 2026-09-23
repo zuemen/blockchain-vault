@@ -12,6 +12,7 @@
 相依：pip install feedparser pyyaml
 """
 import argparse, datetime as dt, hashlib, os, re, sys, unicodedata
+import socket, time
 from pathlib import Path
 
 try:
@@ -24,6 +25,8 @@ EVENTS = ROOT / "10-events"
 DAILY = ROOT / "99-daily"
 CFG = yaml.safe_load((Path(__file__).parent / "feeds.yaml").read_text(encoding="utf-8"))
 TZ = dt.timezone(dt.timedelta(hours=8))          # Asia/Taipei
+# feedparser 本身沒有逾時：任一來源不回應就會卡住整批（Actions 上會跑到超時）。統一設 20 秒
+socket.setdefaulttimeout(20)
 FEED_STATS = {}   # 來源名稱 → (feed 總則數, 時間窗內則數, 錯誤訊息)；dry-run 時印出健康度
 
 TIER_BONUS = {"primary": 4, "trade": 0, "aggregator": -2}
@@ -204,6 +207,7 @@ def collect(hours):
     items = []
     for tier in ("primary", "trade"):
         for src in CFG.get(tier, []):
+            t0 = time.monotonic()
             try:
                 fp = feedparser.parse(src["url"])
             except Exception as e:
@@ -230,6 +234,9 @@ def collect(hours):
                 items.append(dict(title=title, url=e.get("link", ""), source=src["name"],
                                   tier=tier, when=when.astimezone(TZ), score=sc,
                                   hits=hits, summary=summary.strip()))
+            secs = time.monotonic() - t0
+            if secs > 10:                          # 慢來源標出來，方便決定去留
+                err = (err + " " if err else "") + f"慢 {secs:.0f}s"
             FEED_STATS[src["name"]] = (len(fp.entries), in_window, err)
     # 事件級去重：不同媒體報導同一件事只留一則，保留分數高者（等於優先一手來源）
     return sorted(dedup(items), key=lambda x: -x["score"])
@@ -275,12 +282,49 @@ keyword_hits: [{", ".join(it['hits'][:8])}]
     return path
 
 
+def rescore_existing(dry_run=False):
+    """用目前的 score() 重算自動卡的分數。
+
+    評分規則改過之後（例如加了雜訊詞扣分），舊卡的 score 還是舊值，頭版排序會失真。
+    只動 auto: true 的卡、只改 score 那一行；標題取 title，摘要取「事實」段落。
+    """
+    changed = 0
+    for f in sorted(EVENTS.glob("*.md")):
+        txt = f.read_text(encoding="utf-8")
+        fm = re.match(r"^---\n(.*?)\n---\n", txt, re.S)
+        if not fm or not re.search(r"^auto:\s*true\s*$", fm.group(1), re.M):
+            continue
+        title = re.search(r"^title:\s*(.+)$", fm.group(1), re.M)
+        tier = re.search(r"^source_tier:\s*(\S+)", fm.group(1), re.M)
+        old = re.search(r"^score:\s*(-?\d+)", fm.group(1), re.M)
+        facts = re.search(r"^## 事實[^\n]*\n(.*?)(?=^##\s|\Z)", txt, re.S | re.M)
+        summary = re.sub(r"^\s*-\s*", "", facts.group(1).strip(), flags=re.M) if facts else ""
+        if not (title and old):
+            continue
+        new, _ = score(title.group(1).strip(), summary, tier.group(1) if tier else "trade")
+        if new != int(old.group(1)):
+            changed += 1
+            print(f"  {int(old.group(1)):>3} → {new:>3}  {title.group(1).strip()[:56]}")
+            if not dry_run:
+                head = fm.group(1)
+                head = re.sub(r"^score:\s*-?\d+", f"score: {new}", head, count=1, flags=re.M)
+                f.write_text(txt.replace(fm.group(1), head, 1), encoding="utf-8")
+    print(f"{'（試算）' if dry_run else ''}共 {changed} 張卡分數有變動")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=int, default=36)
-    ap.add_argument("--top", type=int, default=8)
+    ap.add_argument("--top", type=int, default=15)
+    ap.add_argument("--min-score", type=int, default=3,
+                    help="低於此分數不開事件卡（預設 3：至少命中一個核心主題且非宣傳稿）")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--rescore", action="store_true",
+                    help="用目前的評分規則重算 10-events/ 裡自動卡（auto: true）的 score，不抓新聞")
     a = ap.parse_args()
+    if a.rescore:
+        rescore_existing(a.dry_run)
+        return
 
     seen = existing_events()
     fresh, skipped = [], []
@@ -288,7 +332,9 @@ def main():
         # 跟已存在的事件卡比對，同一事件就不再開新卡
         match = next((t for t, tk in seen if same_event(it["tokens"], tk)), None)
         (skipped if match else fresh).append((it, match))
-    items = [it for it, _ in fresh][: a.top]
+    # 分數門檻：數量上限拉高後，靠門檻擋掉偏題與宣傳稿
+    below = [it for it, _ in fresh if it["score"] < a.min_score]
+    items = [it for it, _ in fresh if it["score"] >= a.min_score][: a.top]
     today = dt.datetime.now(TZ).date().isoformat()
 
     lines = []
@@ -305,6 +351,8 @@ def main():
             lines.append(f"- [[{p.stem}]] — score {it['score']} — {tag}命中：{reason}")
 
     if a.dry_run:
+        if below:
+            print(f"\n（低於 {a.min_score} 分、不開卡：{len(below)} 則）")
         print(f"\n── 來源健康度（feed 總則數／{a.hours} 小時內）──")
         for name, (total, win, err) in FEED_STATS.items():
             flag = "✗ 抓不到" if total == 0 else ("· 時間窗內無新文" if win == 0 else "✓")

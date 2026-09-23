@@ -30,7 +30,7 @@ jobs:
           # 用台北時間判斷星期：cron 在 UTC 週日 23:00 觸發，那時台北已是週一
           [ "$(TZ=Asia/Taipei date +%u)" = "1" ] && HOURS=72
           echo "抓取最近 ${HOURS} 小時"
-          python3 scripts/fetch_news.py --hours "$HOURS" --top 8
+          python3 scripts/fetch_news.py --hours "$HOURS" --top 15
 
       - name: commit 事件卡與每日筆記
         run: |

@@ -2,62 +2,103 @@
 # primary = 監理機關、央行、公司 IR。這層最值錢，別人都不抓。
 
 primary:
-  - name: FinCEN News
-    url: https://www.fincen.gov/news/news-releases/feed
+  # ── 美國 ──
+  - name: FinCEN (Federal Register)
+    url: https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bagencies%5D%5B%5D=financial-crimes-enforcement-network
+    # FinCEN 官網已無 RSS；改收 Federal Register 的 FinCEN 規則與公告（GTO、311 措施等），量少但都是一手
   - name: SEC Press Releases
     url: https://www.sec.gov/news/pressreleases.rss
   - name: OCC News
-    url: https://www.occ.gov/rss/occ-news-issuances.xml
+    url: https://www.occ.gov/rss/occ_news.xml
   - name: Federal Reserve Press
     url: https://www.federalreserve.gov/feeds/press_all.xml
-  - name: BIS Publications
-    url: https://www.bis.org/list/bispapers/rss.xml
-  - name: HKMA Press Releases
-    url: https://www.hkma.gov.hk/eng/rss/press_releases.xml
-  - name: SFC HK News
-    url: https://apps.sfc.hk/edistributionWeb/api/rss/news?lang=EN
-  - name: MAS Singapore
-    url: https://www.mas.gov.sg/rss/news
-  - name: ESMA
-    url: https://www.esma.europa.eu/rss.xml
-  # ── 國際一手源（2026-09-23 逐一實抓驗證）──
-  - name: ECB Press
-    url: https://www.ecb.europa.eu/rss/press.html        # 含訪談、演講，不只新聞稿
-  - name: Bank of England News
-    url: https://www.bankofengland.co.uk/rss/news
-  - name: FSB
-    url: https://www.fsb.org/feed/                        # 全站 feed；/press/feed/ 已停更
   - name: CFTC Press Releases
     url: https://www.cftc.gov/RSS/RSSGP/rssgp.xml
   - name: FDIC Press Releases
     url: https://public.govdelivery.com/topics/USFDIC_26/feed.rss   # 官方託管在 GovDelivery；fdic.gov/rss.xml 只有理事會開會通知
+  # ── 台灣 ──
+  - name: 金管會新聞稿
+    url: https://www.fsc.gov.tw/RSS/Messages?serno=201202290009&language=chinese   # 一次回傳多年，靠 --hours 過濾
+  - name: 金管會法令函釋
+    url: https://www.fsc.gov.tw/RSS/Newlaw?serno=201202290008&language=chinese
+  # ── 香港 ──
+  - name: HKMA Press Releases
+    url: https://www.hkma.gov.hk/eng/other-information/rss/rss_press-release.xml   # 回傳一年份
+  - name: SFC HK Press Releases
+    url: https://www.sfc.hk/en/RSS-Feeds/Press-releases
+  - name: SFC HK Circulars
+    url: https://www.sfc.hk/en/RSS-Feeds/Circulars          # 含給虛擬資產服務商的通函
+  # ── 國際組織與其他央行 ──
+  - name: BIS Central Bank Speeches
+    url: https://www.bis.org/doclist/cbspeeches.rss          # 全球央行演講彙整，量最大
+  - name: BIS FSI Publications
+    url: https://www.bis.org/doclist/bis_fsi_publs.rss       # 監理研究
+  - name: FSB
+    url: https://www.fsb.org/feed/                           # 全站 feed；/press/feed/ 已停更
+  - name: ECB Press
+    url: https://www.ecb.europa.eu/rss/press.html           # 含訪談、演講，不只新聞稿
+  - name: Bank of England News
+    url: https://www.bankofengland.co.uk/rss/news
+  - name: ESMA
+    url: https://www.esma.europa.eu/rss.xml
+  - name: EBA News
+    url: https://www.eba.europa.eu/news-press/news/rss.xml   # /rss.xml 是 e-mail alert，排序錯亂，別用
   - name: Japan FSA (EN)
     url: https://www.fsa.go.jp/fsaEnNewsList_rss2.xml
-  - name: EBA News
-    url: https://www.eba.europa.eu/news-press/news/rss.xml  # /rss.xml 是 e-mail alert，排序錯亂，別用
-  # 查無穩定 feed，暫不收：
-  #   IMF（imf.org 整站被 Akamai 403 擋）、IOSCO（/rss/rss.xml 自 2023-05 停更）、
-  #   韓國 FSC 英文版（只有韓文 fid=0111，回應 20 秒以上且日期格式非標準）
-  # 台灣：金管會沒有穩定的 RSS，用新聞稿頁面 scrape（見 fetch_news.py 的 html_sources）
+  # ── 身分／ZK 標準與研究 ──
+  - name: DIF Blog
+    url: https://blog.identity.foundation/rss/
+  - name: ethresear.ch
+    url: https://ethresear.ch/latest.rss                     # 以 ZK 研究為主
+  # 查無穩定 feed，暫不收（2026-09-23 驗證）：
+  #   MAS（/rss/* 回 HTML 404 頁；可改接官網 Solr JSON API，需另寫抓取分支並帶完整瀏覽器 UA）
+  #   IMF（imf.org 整站被 Akamai 403 擋）、IOSCO（自 2023-05 停更）、
+  #   韓國 FSC 英文版（只有韓文 feed，回應 20 秒以上且日期非標準）
 
 trade:
-  - name: 動區動趨
-    url: https://www.blocktempo.com/feed/
-  - name: 鏈新聞 ABMedia
-    url: https://abmedia.io/feed
+  # ── 英文 ──
   - name: CoinDesk
-    url: https://www.coindesk.com/arc/outboundfeeds/rss/
+    url: https://www.coindesk.com/arc/outboundfeeds/rss      # 結尾不能有斜線（會 308 轉址導致解析失敗）
   - name: The Block
     url: https://www.theblock.co/rss.xml
-  - name: Ledger Insights
-    url: https://www.ledgerinsights.com/feed/
   - name: Cointelegraph
     url: https://cointelegraph.com/rss
+  - name: Decrypt
+    url: https://decrypt.co/feed
+  - name: The Defiant
+    url: https://thedefiant.io/api/feed
+  - name: Ledger Insights
+    url: https://www.ledgerinsights.com/feed/
   - name: Finextra Blockchain
     url: https://www.finextra.com/rss/channel.aspx?channel=blockchain
+  - name: American Banker
+    url: https://www.americanbanker.com/feed?rss=true        # 全站 feed，靠關鍵詞評分過濾
+  - name: Banking Dive
+    url: https://www.bankingdive.com/feeds/news/
+  - name: Payments Dive
+    url: https://www.paymentsdive.com/feeds/news/
+  - name: PYMNTS Crypto
+    url: https://www.pymnts.com/category/cryptocurrency/feed/
   - name: Chainalysis Blog
     url: https://www.chainalysis.com/blog/feed/
-  # Galaxy Research：官網無 RSS/Atom（各路徑皆 404），暫不收
+  # ── 數位身分 ──
+  - name: Biometric Update (Digital ID)
+    url: https://www.biometricupdate.com/tag/digital-identity/feed
+  - name: SpruceID Blog
+    url: https://blog.spruceid.com/rss/
+  # ── 中文（量大，靠評分門檻過濾）──
+  - name: 鏈新聞 ABMedia
+    url: https://abmedia.io/feed
+  - name: PANews
+    url: https://www.panewslab.com/rss.xml?lang=zh&type=NEWS
+  - name: 吳說區塊鏈
+    url: https://www.wublock123.com/feed
+  - name: TechFlow 深潮
+    url: https://www.techflowpost.com/rss.aspx
+  - name: Odaily
+    url: https://rss.odaily.news/rss/post
+  # 不收：動區動趨（/feed/ 回空 channel）、Galaxy Research（無 RSS）、Blockworks／DL News（feed 停更）、Foresight News（567）、
+  #       ChainCatcher（一天 200+ 則且與上列重疊）
 
 # 主題權重：命中越多、權重越高的詞，score 越高
 weights:

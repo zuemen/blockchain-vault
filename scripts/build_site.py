@@ -7,7 +7,7 @@
 
 用法： python3 scripts/build_site.py
 """
-import json, os, re, shutil, sys, urllib.parse
+import html as html_lib, json, os, re, shutil, sys, urllib.parse
 from email.utils import format_datetime
 from xml.sax.saxutils import escape as xml_escape
 from datetime import datetime, timezone, timedelta
@@ -83,7 +83,7 @@ def collect():
             slug = f.stem
             notes[slug] = dict(
                 slug=slug, path=f, folder=d, folder_label=label, kind=fm.get("type", kind),
-                title=str(fm.get("title") or slug),
+                title=str(fm.get("title") or slug.replace("-", " ")),
                 date=str(fm.get("date") or fm.get("updated") or ""),
                 topics=clean_list(fm.get("topics")),
                 source_name=fm.get("source_name", ""), source_url=fm.get("source_url", ""),
@@ -102,7 +102,7 @@ def resolve_links(notes):
         by_name[n["title"].lower()] = n["slug"]
 
     def render_body(note):
-        body = DV_RE.sub("", note["body"])
+        body = strip_empty_sections(DV_RE.sub("", note["body"]))
 
         def sub(m):
             target, alias = m.group(1).strip(), (m.group(2) or "").strip()
@@ -126,61 +126,120 @@ def resolve_links(notes):
     return notes
 
 
+def esc(v):
+    """HTML 跳脫：標題可能來自 RSS，含 < & 等字元。"""
+    return html_lib.escape(str(v), quote=True)
+
+
+# 空段落：標題底下只有「-」或「（待填）」——自動抓的事件卡骨架，網站上不顯示
+EMPTY_SECTION_RE = re.compile(r"^##[^\n]*\n(?:[ \t]*(?:-|（待填）)?[ \t]*\n)*(?=^##\s|\Z)", re.M)
+
+
+def strip_empty_sections(body):
+    return EMPTY_SECTION_RE.sub("", body.rstrip() + "\n")
+
+
 def excerpt(note, k=150):
-    txt = re.sub(r"<[^>]+>", " ", note["html"])
+    """純文字摘要：先拿掉標題（h1–h6）再去標籤，避免摘要開頭是「一句話 事實…」這種段落名。"""
+    txt = re.sub(r"<h[1-6][^>]*>.*?</h[1-6]>", " ", note["html"], flags=re.S)
+    txt = re.sub(r"<[^>]+>", " ", txt)
+    txt = html_lib.unescape(re.sub(r"\s+", " ", txt)).strip()
+    return txt[:k] + ("…" if len(txt) > k else "")
+
+
+def lede(note):
+    """「一句話」段落的內容；沒填回傳空字串。"""
+    m = re.search(r"^##\s*一句話\s*\n(.*?)(?=^##\s|\Z)", note["body"], re.S | re.M)
+    txt = m.group(1).strip() if m else ""
+    txt = WIKI_RE.sub(lambda w: w.group(2) or w.group(1), txt)
+    txt = re.sub(r"[*_`]", "", txt)
     txt = re.sub(r"\s+", " ", txt).strip()
-    return txt[:k]
+    return "" if (not txt or txt.startswith("（待填") or txt == "-") else txt
+
+
+def summary(note, k=120):
+    """卡片用的一段話：優先「一句話」，否則用內文摘要。"""
+    s = lede(note)
+    if s:
+        return s[:k] + ("…" if len(s) > k else "")
+    return excerpt(note, k)
+
+
+def score_of(n):
+    try:
+        return int(n["score"])
+    except (TypeError, ValueError):
+        return 5          # 手寫筆記沒有 score，視為中等
 
 
 TIER_LABEL = {"primary": "一手來源", "trade": "產業媒體", "aggregator": "彙整"}
+WEEKDAY = "一二三四五六日"
 
 
-def chip(text, cls=""):
-    return f'<span class="chip {cls}">{text}</span>'
+def signal(score):
+    """訊號條：分數 0–20 對應 5 格。"""
+    lit = max(0, min(5, round(score / 4)))
+    bars = "".join(f'<i class="{"on" if i < lit else ""}"></i>' for i in range(5))
+    return f'<span class="signal" title="訊號分數 {score}"><span class="bars">{bars}</span>{score}</span>'
 
 
-def meta_bar(n):
-    bits = []
-    if n["date"]:
-        bits.append(chip(n["date"], "date"))
-    if n["source_tier"]:
-        bits.append(chip(TIER_LABEL.get(n["source_tier"], n["source_tier"]),
-                         "tier-primary" if n["source_tier"] == "primary" else "tier"))
-    if n["score"] != "":
-        bits.append(chip(f"score {n['score']}", "score"))
-    if n["maturity"]:
-        bits.append(chip(f"maturity: {n['maturity']}", f"mat-{n['maturity']}"))
-    if n["jurisdiction"]:
-        bits.append(chip(n["jurisdiction"], "juris"))
-    for t in n["topics"]:
-        bits.append(chip(t, "topic"))
-    return "".join(bits)
+def kicker(n):
+    """標題上方的小標：主題＋一手章。"""
+    bits = [f'<span class="k-topic">{esc(t)}</span>' for t in n["topics"][:3]]
+    if not bits:
+        bits.append(f'<span class="k-topic">{esc(n["folder_label"])}</span>')
+    seal = '<span class="seal">一手</span>' if n["source_tier"] == "primary" else ""
+    return f'<p class="kicker">{seal}{"".join(bits)}</p>'
 
 
-def shell(title, body, depth=0, desc=SITE_DESC):
+def source_link(n, cls="src"):
+    if not n["source_url"]:
+        return ""
+    return (f'<a class="{cls}" href="{esc(n["source_url"])}" target="_blank" rel="noopener">'
+            f'{esc(n["source_name"] or "來源")} ↗</a>')
+
+
+def shell(title, body, depth=0, desc=SITE_DESC, masthead=False):
     up = "../" * depth
+    now = datetime.now(TZ)
+    if masthead:
+        top = f"""<header class="masthead">
+  <div class="mh-rule"></div>
+  <div class="mh-meta"><span>{now.year} 年 {now.month} 月 {now.day} 日 星期{WEEKDAY[now.weekday()]}</span>
+    <span class="mh-issue">{{ISSUE}}</span><span>每日 07:00 更新</span></div>
+  <h1 class="mh-title"><a href="{up}index.html">Blockchain <em>Vault</em></a></h1>
+  <p class="mh-tag">鏈上金融的監理與基礎設施 — 自動抓取，人工判讀</p>
+  <div class="mh-rule double"></div>
+</header>"""
+    else:
+        top = f"""<header class="bar">
+  <a class="bar-brand" href="{up}index.html">Blockchain <em>Vault</em></a>
+  <span class="bar-tag">ZK · SSI · RWA · 金融法規</span>
+</header>"""
     return f"""<!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="{desc}">
-<title>{title}</title>
+<meta name="description" content="{esc(desc)}">
+<title>{esc(title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Newsreader:wght@400;600;800&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@400;600;900&display=swap">
 <link rel="stylesheet" href="{up}assets/style.css">
 <link rel="alternate" type="application/rss+xml" title="{SITE_TITLE} — 事件" href="{up}feed.xml">
 </head>
 <body>
-<header class="site">
-  <a class="brand" href="{up}index.html">{SITE_TITLE}</a>
-  <span class="tag">{SITE_DESC}</span>
-</header>
+{top}
 <main>
 {body}
 </main>
-<footer>
-  <span>最後更新 {datetime.now(TZ).strftime('%Y-%m-%d %H:%M')} (UTC+8)</span>
-  <span>事件卡由腳本抓取骨架，判讀與概念筆記為人工撰寫</span>
-  <span><a href="{up}feed.xml">訂閱 RSS</a></span>
+<footer class="colophon">
+  <div class="mh-rule"></div>
+  <p><span>Blockchain <em>Vault</em></span>
+     <span>事件卡由腳本抓取骨架，判讀與概念筆記為人工撰寫</span>
+     <span>最後更新 {now.strftime('%Y-%m-%d %H:%M')}（台北）</span>
+     <span><a href="{up}feed.xml">訂閱 RSS</a></span></p>
 </footer>
 <script src="{up}assets/app.js"></script>
 </body>
@@ -189,67 +248,114 @@ def shell(title, body, depth=0, desc=SITE_DESC):
 
 
 def build_index(notes):
-    events = sorted([n for n in notes.values() if n["folder"] == "10-events"],
-                    key=lambda x: x["date"], reverse=True)
-    concepts = sorted([n for n in notes.values() if n["folder"] == "20-concepts"],
-                      key=lambda x: x["title"])
-    entities = sorted([n for n in notes.values() if n["folder"] == "30-entities"],
-                      key=lambda x: x["title"])
-    regs = sorted([n for n in notes.values() if n["folder"] == "40-regulations"],
-                  key=lambda x: x["title"])
-    mocs = sorted([n for n in notes.values() if n["folder"] == "50-maps"],
-                  key=lambda x: x["title"])
+    events = [n for n in notes.values() if n["folder"] == "10-events"]
+    by_title = lambda x: x["title"]
+    concepts = sorted([n for n in notes.values() if n["folder"] == "20-concepts"], key=by_title)
+    entities = sorted([n for n in notes.values() if n["folder"] == "30-entities"], key=by_title)
+    regs = sorted([n for n in notes.values() if n["folder"] == "40-regulations"], key=by_title)
+    mocs = sorted([n for n in notes.values() if n["folder"] == "50-maps"], key=by_title)
+
+    # 頭版只放正分事件；負分（活動宣傳、偏題）仍有個別頁面、可搜尋，但不上頭版
+    live = sorted([n for n in events if score_of(n) >= 0],
+                  key=lambda x: (x["date"], score_of(x)), reverse=True)
+    window = live[:30]                                   # 最近 30 則當「本期」
+    ranked = sorted(window, key=lambda x: (score_of(x), x["date"]), reverse=True)
+    lead = ranked[0] if ranked else None
+    seconds = ranked[1:4]
+    used = {n["slug"] for n in ranked[:4]}
+    briefs = [n for n in window if n["slug"] not in used]
 
     all_topics = sorted({t for n in notes.values() for t in n["topics"]})
-    chips = "".join(f'<button class="filter" data-topic="{t}">{t}</button>' for t in all_topics)
+    chips = "".join(f'<button class="filter" data-topic="{esc(t)}">{esc(t)}</button>' for t in all_topics)
 
-    def card(n):
-        src = ""
-        if n["source_url"]:
-            src = f'<a class="src" href="{n["source_url"]}" target="_blank" rel="noopener">{n["source_name"] or "來源"} ↗</a>'
-        return f"""<article class="card" data-topics="{'|'.join(n['topics'])}" data-kind="{n['folder']}">
-  <a class="t" href="{url_for(n['slug'])}">{n['title']}</a>
-  <div class="m">{meta_bar(n)}</div>
-  <p class="x">{excerpt(n)}</p>
-  {src}
+    def lead_html(n):
+        return f"""<article class="lead rise" style="--i:0">
+  {kicker(n)}
+  <h2 class="lead-h"><a href="{url_for(n['slug'])}">{esc(n['title'])}</a></h2>
+  <p class="lead-deck">{esc(summary(n, 220))}</p>
+  <p class="byline"><time>{esc(n['date'])}</time>{source_link(n)}{signal(score_of(n))}</p>
 </article>"""
 
-    def list_block(title, items, note=""):
+    def second_html(n, i):
+        return f"""<article class="story rise" style="--i:{i}">
+  {kicker(n)}
+  <h3><a href="{url_for(n['slug'])}">{esc(n['title'])}</a></h3>
+  <p class="deck">{esc(summary(n, 110))}</p>
+  <p class="byline"><time>{esc(n['date'][5:])}</time>{source_link(n)}{signal(score_of(n))}</p>
+</article>"""
+
+    def brief_html(n):
+        seal = '<span class="seal sm">一手</span>' if n["source_tier"] == "primary" else ""
+        return (f'<li><time>{esc(n["date"][5:])}</time>'
+                f'<a href="{url_for(n["slug"])}">{seal}{esc(n["title"])}</a>'
+                f'<span class="b-src">{esc(n["source_name"])}{signal(score_of(n))}</span></li>')
+
+    def index_col(title, items, fmt):
         if not items:
             return ""
-        lis = "".join(
-            f'<li data-topics="{"|".join(n["topics"])}"><a href="{url_for(n["slug"])}">{n["title"]}</a>'
-            + (f'<span class="mini mat-{n["maturity"]}">{n["maturity"]}</span>' if n["maturity"] else "")
-            + (f'<span class="mini">{n["jurisdiction"]}</span>' if n["jurisdiction"] else "")
-            + "</li>" for n in items)
-        return f'<section class="block"><h2>{title}</h2>{f"<p class=note>{note}</p>" if note else ""}<ul class="linklist">{lis}</ul></section>'
+        lis = "".join(f"<li>{fmt(n)}</li>" for n in items)
+        return f'<section class="idx-col"><h3>{title}<span>{len(items)}</span></h3><ul>{lis}</ul></section>'
+
+    link = lambda n: f'<a href="{url_for(n["slug"])}">{esc(n["title"])}</a>'
+    concept_fmt = lambda n: link(n) + (f'<span class="mat mat-{esc(n["maturity"])}">{esc(n["maturity"])}</span>' if n["maturity"] else "")
+    reg_fmt = lambda n: link(n) + (f'<span class="mat">{esc(n["jurisdiction"])}</span>' if n["jurisdiction"] else "")
+
+    n_primary = sum(1 for n in window if n["source_tier"] == "primary")
+    front = ""
+    if lead:
+        front = f"""
+<div class="front">
+  <div class="front-main">
+    {lead_html(lead)}
+    <div class="seconds">{''.join(second_html(n, i + 1) for i, n in enumerate(seconds))}</div>
+  </div>
+  <aside class="rail">
+    <section class="rail-box">
+      <h3>本期</h3>
+      <p class="stat"><b>{len(window)}</b> 則事件　<b>{n_primary}</b> 則一手</p>
+      <p class="stat-note">分數＝主題關鍵詞＋組合訊號；一手來源加權。10 分以上值得細讀。</p>
+    </section>
+    <section class="rail-box" id="recent-comments">
+      <h3>最近留言</h3>
+      <p class="note c-status">載入中…</p>
+      <ul class="linklist c-recent"></ul>
+    </section>
+    {f'<section class="rail-box"><h3>主題地圖</h3><ul class="rail-list">{"".join(f"<li>{link(n)}</li>" for n in mocs)}</ul></section>' if mocs else ""}
+  </aside>
+</div>"""
 
     body = f"""
-<div class="toolbar">
-  <input id="q" type="search" placeholder="搜尋標題、內容、主題…" autocomplete="off">
+<nav class="toolbar">
   <div class="filters"><button class="filter active" data-topic="">全部</button>{chips}</div>
-</div>
+  <input id="q" type="search" placeholder="搜尋標題、內容、主題…" autocomplete="off">
+</nav>
 <div id="results" class="hidden"></div>
 
 <div id="main-view">
-  <section class="block">
-    <h2>最新事件 <span class="count">{len(events)}</span></h2>
-    <div class="cards">{''.join(card(n) for n in events[:20])}</div>
+{front}
+  <section class="briefs">
+    <h2 class="sec-h"><span>簡訊</span></h2>
+    <ul>{''.join(brief_html(n) for n in briefs)}</ul>
   </section>
 
-  <section class="block" id="recent-comments">
-    <h2>最近留言</h2>
-    <p class="note c-status">載入中…</p>
-    <ul class="linklist c-recent"></ul>
+  <section class="index">
+    <h2 class="sec-h"><span>索引</span></h2>
+    <div class="idx-grid">
+      {index_col("概念", concepts, concept_fmt)}
+      {index_col("法規追蹤", regs, reg_fmt)}
+      {index_col("機構", entities, link)}
+    </div>
   </section>
-
-  {list_block("主題地圖", mocs, "每張地圖帶著我的核心主張與開放問題")}
-  {list_block("概念", concepts, "知識累積在這裡。maturity 標示成熟度：seed 還講不深、growing 有案例、stable 能上台講")}
-  {list_block("法規追蹤", regs)}
-  {list_block("機構", entities)}
 </div>
 """
-    (OUT / "index.html").write_text(shell(SITE_TITLE, body, 0), encoding="utf-8")
+    first = min((n["date"] for n in events if n["date"]), default="")
+    try:
+        issue = (datetime.now(TZ).date() - datetime.strptime(first[:10], "%Y-%m-%d").date()).days + 1
+        issue_txt = f"第 {issue} 號"
+    except ValueError:
+        issue_txt = ""
+    page = shell(SITE_TITLE, body, 0, masthead=True).replace("{ISSUE}", issue_txt)
+    (OUT / "index.html").write_text(page, encoding="utf-8")
 
 
 def comments_block(slug):
@@ -258,7 +364,7 @@ def comments_block(slug):
         f'<button type="button" class="star" data-v="{i}" aria-label="{i} 顆星" aria-pressed="false">★</button>'
         for i in range(1, 6))
     return f"""<section class="comments" id="comments" data-slug="{html_attr(slug)}">
-  <h2>留言</h2>
+  <h2 class="sec-h"><span>留言</span></h2>
   <p class="note c-status">載入中…</p>
   <ol class="c-list"></ol>
   <form class="c-form" hidden>
@@ -282,32 +388,37 @@ def build_notes(notes):
     nd = OUT / "n"
     nd.mkdir(parents=True, exist_ok=True)
     for n in notes.values():
-        src = ""
+        rel = lambda items, title: (
+            f'<section class="rel"><h3>{title}</h3><ul>'
+            + "".join(f'<li><a href="../{url_for(s)}">{esc(notes[s]["title"])}</a></li>' for s in items)
+            + "</ul></section>") if items else ""
+
+        deck = lede(n)
+        prose = n["html"]
+        if deck:   # 「一句話」已提到標題下當導言，內文就不重複
+            prose = re.sub(r"<h2>\s*一句話\s*</h2>\s*<p>.*?</p>", "", prose, count=1, flags=re.S)
+
+        byline = [f"<time>{esc(n['date'])}</time>"] if n["date"] else []
         if n["source_url"]:
-            src = (f'<p class="srcline">來源：<a href="{n["source_url"]}" target="_blank" '
-                   f'rel="noopener">{n["source_name"] or n["source_url"]} ↗</a></p>')
-        bl = ""
-        if n["backlinks"]:
-            items = "".join(f'<li><a href="../{url_for(b)}">{notes[b]["title"]}</a></li>'
-                            for b in sorted(n["backlinks"]))
-            bl = f'<section class="backlinks"><h2>連到這裡的筆記</h2><ul>{items}</ul></section>'
-        fwd = ""
-        if n["links"]:
-            items = "".join(f'<li><a href="../{url_for(l)}">{notes[l]["title"]}</a></li>'
-                            for l in n["links"])
-            fwd = f'<section class="backlinks"><h2>這篇連出去</h2><ul>{items}</ul></section>'
+            byline.append(source_link(n))
+        if n["folder"] == "10-events" and n["score"] != "":
+            byline.append(signal(score_of(n)))
+        if n["maturity"]:
+            byline.append(f'<span class="mat mat-{esc(n["maturity"])}">{esc(n["maturity"])}</span>')
+        if n["jurisdiction"]:
+            byline.append(f'<span class="mat">{esc(n["jurisdiction"])}</span>')
 
         body = f"""
 <article class="note">
-  <p class="crumb"><a href="../index.html">← 全部</a> · {n['folder_label']}</p>
-  <h1>{n['title']} <span class="c-stat" id="c-stat"></span></h1>
-  <div class="m">{meta_bar(n)}</div>
-  {src}
-  <div class="prose">{n['html']}</div>
+  <p class="crumb"><a href="../index.html">← 頭版</a><span>{esc(n['folder_label'])}</span></p>
+  {kicker(n)}
+  <h1>{esc(n['title'])} <span class="c-stat" id="c-stat"></span></h1>
+  {f'<p class="note-deck">{esc(deck)}</p>' if deck else ''}
+  <p class="byline">{''.join(byline)}</p>
+  <div class="prose">{prose}</div>
+  <div class="rels">{rel(n["links"], "這篇連出去")}{rel(sorted(n["backlinks"]), "連到這裡的筆記")}</div>
+  {comments_block(n['slug'])}
 </article>
-{fwd}
-{bl}
-{comments_block(n['slug'])}
 """
         (nd / f"{n['slug']}.html").write_text(
             shell(f"{n['title']} — {SITE_TITLE}", body, 1, excerpt(n, 120)), encoding="utf-8")
@@ -324,105 +435,254 @@ def build_search(notes):
 
 
 CSS = """
+/* Blockchain Vault — 晨報版面：米白紙、墨黑字、一抹印章紅 */
 :root{
-  --bg:#fbfaf8; --fg:#1b1a18; --dim:#6b6660; --line:#e6e2dc; --card:#fff;
-  --accent:#8a5a2b; --accent-soft:#f3ece3; --miss:#b9b3ab;
-  color-scheme: light dark;
+  --paper:#f4efe5; --paper-2:#ebe4d6; --card:#faf7f0;
+  --ink:#1c1915; --ink-2:#4b443b; --dim:#877e71; --hair:#d6cdbd; --rule:#1c1915;
+  --red:#ae2a1f; --red-soft:#f1dfd6; --green:#2f6b47; --miss:#b3a998;
+  /* 舊名稱沿用（搜尋結果、留言區） */
+  --bg:var(--paper); --fg:var(--ink); --line:var(--hair); --accent:var(--red); --accent-soft:var(--red-soft);
+  --serif:"Newsreader","Noto Serif TC","Songti TC","PMingLiU",serif;
+  --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --display:"Instrument Serif","Noto Serif TC",serif;
+  color-scheme:light dark;
 }
-@media (prefers-color-scheme: dark){
-  :root{ --bg:#16161a; --fg:#e9e7e3; --dim:#9a958e; --line:#2b2b31; --card:#1d1d22;
-         --accent:#d9a86c; --accent-soft:#2a241d; --miss:#5c574f; }
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#16140f; --paper-2:#1e1b16; --card:#1b1813;
+    --ink:#ece4d4; --ink-2:#c3b9a8; --dim:#8e8577; --hair:#35302a; --rule:#ece4d4;
+    --red:#e2694f; --red-soft:#3a221b; --green:#7fb893; --miss:#5d564c;
+  }
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);
-  font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC","PingFang TC",sans-serif;
-  padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
-a{color:var(--accent);text-decoration:none}
-a:hover{text-decoration:underline}
-header.site{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;
-  padding:20px 20px 12px;border-bottom:1px solid var(--line)}
-.brand{font-weight:650;font-size:17px;color:var(--fg)}
-.tag{color:var(--dim);font-size:12.5px}
-main{max-width:920px;margin:0 auto;padding:20px}
-footer{max-width:920px;margin:40px auto 24px;padding:16px 20px;border-top:1px solid var(--line);
-  color:var(--dim);font-size:12px;display:flex;gap:16px;flex-wrap:wrap}
-.toolbar{margin-bottom:20px}
-#q{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:10px;
-  background:var(--card);color:var(--fg);font-size:15px}
-#q:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
-.filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.filter{border:1px solid var(--line);background:var(--card);color:var(--dim);
-  border-radius:999px;padding:4px 11px;font-size:12.5px;cursor:pointer}
-.filter.active{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
-.block{margin:0 0 34px}
-.block h2{font-size:15px;letter-spacing:.02em;margin:0 0 6px;display:flex;gap:8px;align-items:center}
-.count{color:var(--dim);font-weight:400;font-size:12px}
-.note.small,p.note{color:var(--dim);font-size:12.5px;margin:0 0 12px}
-.cards{display:grid;gap:12px}
-@media(min-width:720px){.cards{grid-template-columns:1fr 1fr}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
-.card .t{display:block;font-weight:600;margin-bottom:6px;color:var(--fg);line-height:1.45}
-.card .x{color:var(--dim);font-size:13px;margin:8px 0 6px}
-.src{font-size:12px}
-.m{display:flex;gap:5px;flex-wrap:wrap;margin:2px 0 4px}
-.chip{font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:1px 7px;color:var(--dim)}
-.chip.topic{background:var(--accent-soft);color:var(--accent);border-color:transparent}
-.chip.tier-primary{background:#1f7a4d;color:#fff;border-color:transparent}
-.chip.score{font-variant-numeric:tabular-nums}
-.mat-seed{color:#a8741f}.mat-growing{color:#1f7a4d}.mat-stable{color:var(--dim)}
-.linklist{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}
-.linklist li{border-bottom:1px solid var(--line);padding:9px 2px;display:flex;gap:10px;align-items:baseline}
-.mini{font-size:11.5px;color:var(--dim)}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:15.5px/1.75 var(--sans);
+  padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);
+  /* 紙張顆粒 */
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.45 0 0 0 0 0.4 0 0 0 .055 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+a{color:inherit;text-decoration:none}
+a:hover{color:var(--red)}
+::selection{background:var(--red);color:var(--paper)}
+main{max-width:1180px;margin:0 auto;padding:0 24px}
+
+/* ── 報頭 ── */
+.masthead{max-width:1180px;margin:0 auto;padding:22px 24px 0;text-align:center}
+.mh-rule{border-top:1px solid var(--rule)}
+.mh-rule.double{border-top:3px double var(--rule);margin-top:14px}
+.mh-meta{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:7px 0;
+  font:500 11.5px/1.4 var(--mono);letter-spacing:.06em;color:var(--ink-2);border-bottom:1px solid var(--hair)}
+.mh-issue{color:var(--red)}
+.mh-title{font:400 clamp(44px,8.5vw,104px)/.95 var(--display);letter-spacing:-.01em;margin:18px 0 6px}
+.mh-title em{font-style:italic;color:var(--red)}
+.mh-title a:hover{color:inherit}
+.mh-tag{margin:0;font:600 14px/1.5 var(--serif);letter-spacing:.18em;color:var(--ink-2)}
+
+.bar{max-width:1180px;margin:0 auto;padding:16px 24px 12px;display:flex;gap:14px;align-items:baseline;
+  flex-wrap:wrap;border-bottom:3px double var(--rule)}
+.bar-brand{font:400 30px/1 var(--display)}
+.bar-brand em{font-style:italic;color:var(--red)}
+.bar-tag{font:500 11.5px var(--mono);letter-spacing:.08em;color:var(--dim)}
+
+/* ── 導覽列：主題＋搜尋 ── */
+.toolbar{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  padding:10px 0;border-bottom:1px solid var(--rule);margin-bottom:26px}
+.filters{display:flex;gap:2px;flex-wrap:wrap}
+.filter{border:0;background:none;color:var(--ink-2);font:500 13.5px var(--sans);padding:5px 10px;cursor:pointer;
+  border-radius:0;position:relative}
+.filter:hover{color:var(--red)}
+.filter.active{color:var(--ink)}
+.filter.active::after{content:"";position:absolute;left:10px;right:10px;bottom:0;height:2px;background:var(--red)}
+#q{flex:0 1 280px;min-width:180px;padding:7px 2px;border:0;border-bottom:1px solid var(--ink-2);background:transparent;
+  color:var(--ink);font:15px var(--sans);border-radius:0}
+#q:focus{outline:none;border-bottom-color:var(--red)}
+#q::placeholder{color:var(--dim)}
+
+/* ── 頭版 ── */
+.front{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0 40px;margin-bottom:34px}
+.front-main{min-width:0}
+.kicker{margin:0 0 8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  font:500 11.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--red)}
+.k-topic+.k-topic::before{content:"／";margin-right:10px;color:var(--hair)}
+.seal{display:inline-block;font:900 11px/1 var(--serif);letter-spacing:.1em;color:var(--red);
+  border:1.5px solid var(--red);padding:4px 5px 3px;transform:rotate(-4deg);border-radius:2px}
+.seal.sm{font-size:10px;padding:2px 3px 1px;margin-right:6px;vertical-align:2px}
+.lead{padding-bottom:26px;border-bottom:1px solid var(--rule)}
+.lead-h{font:900 clamp(28px,4vw,46px)/1.22 var(--serif);letter-spacing:-.005em;margin:4px 0 14px;text-wrap:balance}
+.lead-deck{font:600 18px/1.75 var(--serif);color:var(--ink-2);margin:0 0 14px;max-width:44em}
+.byline{display:flex;gap:6px 14px;align-items:center;flex-wrap:wrap;margin:0;
+  font:400 12px/1.5 var(--mono);color:var(--dim)}
+.byline .src{color:var(--ink-2);border-bottom:1px solid var(--hair)}
+.byline .src:hover{color:var(--red);border-color:var(--red)}
+.signal{display:inline-flex;gap:6px;align-items:center;font:500 12px var(--mono);color:var(--ink-2)}
+.bars{display:inline-flex;gap:2px;align-items:flex-end}
+.bars i{display:block;width:4px;background:var(--hair)}
+.bars i:nth-child(1){height:5px}.bars i:nth-child(2){height:7px}.bars i:nth-child(3){height:9px}
+.bars i:nth-child(4){height:11px}.bars i:nth-child(5){height:13px}
+.bars i.on{background:var(--red)}
+
+.seconds{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.story{padding:20px 20px 22px;border-right:1px solid var(--hair)}
+.story:first-child{padding-left:0}
+.story:last-child{border-right:0;padding-right:0}
+.story h3{font:700 19px/1.45 var(--serif);margin:2px 0 10px;text-wrap:pretty}
+.story .deck{font-size:13.5px;line-height:1.75;color:var(--ink-2);margin:0 0 12px}
+
+/* 右欄 */
+.rail{border-left:1px solid var(--rule);padding-left:24px;min-width:0}
+.rail-box{padding:0 0 18px;margin-bottom:18px;border-bottom:1px solid var(--hair)}
+.rail-box:last-child{border-bottom:0}
+.rail h3,.idx-col h3{font:500 11.5px/1 var(--mono);letter-spacing:.16em;color:var(--red);margin:0 0 12px;
+  display:flex;justify-content:space-between}
+.idx-col h3 span{color:var(--dim)}
+.stat{margin:0;font:600 15px var(--serif)}
+.stat b{font:400 34px/1 var(--display);margin-right:2px}
+.stat-note{margin:8px 0 0;font-size:12.5px;line-height:1.65;color:var(--dim)}
+.rail-list{list-style:none;margin:0;padding:0}
+.rail-list li{padding:6px 0;border-top:1px dotted var(--hair);font:600 14px/1.5 var(--serif)}
+.rail-list li:first-child{border-top:0;padding-top:0}
+
+/* 區段標題：左右細線夾字 */
+.sec-h{display:flex;align-items:center;gap:14px;margin:0 0 14px;font:500 11.5px/1 var(--mono);
+  letter-spacing:.24em;color:var(--ink)}
+.sec-h::before,.sec-h::after{content:"";flex:1;border-top:1px solid var(--rule)}
+
+/* 簡訊 */
+.briefs{margin-bottom:40px}
+.briefs ul{list-style:none;margin:0;padding:0;columns:2;column-gap:40px;column-rule:1px solid var(--hair)}
+.briefs li{break-inside:avoid;display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px 10px;
+  padding:10px 0;border-bottom:1px dotted var(--hair)}
+.briefs time{font:400 11.5px/1.9 var(--mono);color:var(--dim);grid-row:span 2}
+.briefs li a{font:600 15px/1.5 var(--serif)}
+.briefs .b-src{font-size:11.5px;color:var(--dim);display:flex;gap:10px}
+
+/* 索引 */
+.index{margin-bottom:30px}
+.idx-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 34px}
+.idx-col ul{list-style:none;margin:0;padding:0}
+.idx-col li{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+  padding:7px 0;border-top:1px dotted var(--hair);font:600 14.5px/1.5 var(--serif)}
+.mat{font:400 11px var(--mono);color:var(--dim);white-space:nowrap}
+.mat-seed{color:#a8741f}.mat-growing{color:var(--green)}.mat-stable{color:var(--ink-2)}
+
+/* 進場動畫 */
+.rise{animation:rise .7s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0) * 90ms)}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.rise{animation:none}}
+
+/* ── 搜尋結果（app.js 產生） ── */
 .hidden{display:none}
-#results .card{margin-bottom:10px}
-.crumb{color:var(--dim);font-size:12.5px;margin:0 0 6px}
-.note h1{font-size:23px;line-height:1.35;margin:.2em 0 .4em}
-.prose{margin-top:14px}
-.prose h2{font-size:16px;margin:1.8em 0 .5em;padding-bottom:4px;border-bottom:1px solid var(--line)}
-.prose h3{font-size:14.5px;margin:1.4em 0 .4em}
-.prose table{border-collapse:collapse;width:100%;font-size:13.5px;display:block;overflow-x:auto}
-.prose th,.prose td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
-.prose th{background:var(--accent-soft)}
-.prose code{background:var(--accent-soft);padding:1px 5px;border-radius:4px;font-size:12.5px}
-.prose pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto}
-.prose blockquote{margin:1em 0;padding:2px 14px;border-left:3px solid var(--accent);color:var(--dim)}
+#results{margin-bottom:40px}
+.card{padding:14px 0;border-bottom:1px solid var(--hair)}
+.card .t{display:block;font:700 18px/1.45 var(--serif);margin-bottom:6px}
+.card .x{color:var(--ink-2);font-size:13.5px;margin:6px 0 0}
+.m{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:400 11px/1.6 var(--mono);color:var(--dim);border:1px solid var(--hair);padding:0 6px}
+.chip.topic{color:var(--red);border-color:transparent;background:var(--red-soft)}
+p.note{color:var(--dim);font-size:13px;margin:0 0 10px}
+
+/* ── 筆記頁 ── */
+article.note{max-width:720px;margin:30px auto 0}
+.crumb{display:flex;gap:12px;margin:0 0 22px;font:400 12px var(--mono);color:var(--dim);letter-spacing:.06em}
+.crumb span::before{content:"／";margin-right:12px;color:var(--hair)}
+article.note h1{font:900 clamp(28px,4.4vw,42px)/1.28 var(--serif);margin:6px 0 16px;text-wrap:balance}
+.c-stat{font:400 12.5px var(--mono);color:var(--dim);white-space:nowrap;vertical-align:middle}
+.note-deck{font:600 19px/1.8 var(--serif);color:var(--ink-2);margin:0 0 16px;padding-left:16px;border-left:3px solid var(--red)}
+article.note .byline{padding:10px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--hair);margin-bottom:8px}
+.prose{font:400 16.5px/1.95 var(--serif);color:var(--ink)}
+.prose>p:first-child::first-letter{float:left;font:900 3.3em/.9 var(--serif);margin:.08em .1em 0 0;color:var(--red)}
+.prose h2{font:500 12px/1 var(--mono);letter-spacing:.2em;color:var(--red);margin:2.4em 0 .9em;
+  display:flex;align-items:center;gap:12px}
+.prose h2::after{content:"";flex:1;border-top:1px solid var(--hair)}
+.prose h3{font:700 17px var(--serif);margin:1.6em 0 .5em}
+.prose ul,.prose ol{padding-left:1.3em}
+.prose li{margin:.35em 0}
+.prose li::marker{color:var(--red)}
+.prose strong{font-weight:900}
+.prose a,.wl{color:var(--ink);text-decoration:underline;text-decoration-color:var(--red);text-underline-offset:3px}
+.prose a:hover,.wl:hover{color:var(--red)}
+.wl-miss{color:var(--dim);border-bottom:1px dotted var(--miss)}
+.prose table{border-collapse:collapse;width:100%;font:400 14px/1.6 var(--sans);display:block;overflow-x:auto;margin:1.2em 0}
+.prose th,.prose td{border-bottom:1px solid var(--hair);padding:8px 10px;text-align:left;vertical-align:top}
+.prose th{font:500 11.5px var(--mono);letter-spacing:.08em;color:var(--dim);border-bottom:1px solid var(--rule)}
+.prose code{font:13px var(--mono);background:var(--paper-2);padding:1px 5px}
+.prose pre{background:var(--paper-2);padding:14px;overflow-x:auto}
+.prose blockquote{margin:1.4em 0;padding:0 0 0 18px;border-left:3px solid var(--red);font-weight:600;color:var(--ink-2)}
 .prose img{max-width:100%}
-.wl{border-bottom:1px dashed var(--accent);text-decoration:none}
-.wl-miss{color:var(--miss);border-bottom:1px dotted var(--miss)}
-.srcline{font-size:13px;color:var(--dim)}
-.backlinks{margin-top:30px;padding-top:14px;border-top:1px solid var(--line)}
-.backlinks h2{font-size:13px;color:var(--dim);margin:0 0 6px}
-.backlinks ul{margin:0;padding-left:18px;font-size:13.5px}
-/* 留言 */
-.c-stat{font-size:12.5px;font-weight:400;color:var(--dim);white-space:nowrap}
-.comments{margin-top:34px;padding-top:14px;border-top:1px solid var(--line)}
-.comments h2{font-size:15px;margin:0 0 8px}
-.c-list{list-style:none;padding:0;margin:0 0 18px}
-.c-item{border-bottom:1px solid var(--line);padding:10px 2px}
-.c-head{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:12.5px;color:var(--dim)}
-.c-who{font-weight:600;color:var(--fg)}
-.c-stars{color:var(--accent);letter-spacing:1px}
-.c-text{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
-.c-form{display:grid;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.rels{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:40px 0 10px}
+.rel h3{font:500 11.5px var(--mono);letter-spacing:.16em;color:var(--red);margin:0 0 8px}
+.rel ul{list-style:none;margin:0;padding:0}
+.rel li{padding:6px 0;border-top:1px dotted var(--hair);font:600 14.5px/1.5 var(--serif)}
+
+/* ── 留言 ── */
+.comments{margin-top:36px}
+.c-list{list-style:none;padding:0;margin:0 0 20px}
+.c-item{border-bottom:1px dotted var(--hair);padding:12px 0}
+.c-head{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font:400 12px var(--mono);color:var(--dim)}
+.c-who{font:700 14px var(--serif);color:var(--ink)}
+.c-stars{color:var(--red);letter-spacing:1px}
+.c-text{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:400 15px/1.85 var(--serif)}
+.c-form{display:grid;gap:10px;background:var(--card);border:1px solid var(--rule);padding:18px;box-shadow:4px 4px 0 var(--paper-2)}
 .c-form[hidden]{display:none}   /* display:grid 會蓋掉 hidden 屬性，要明寫 */
-.c-hint{margin:0;font-size:13px;color:var(--dim)}
+.c-hint{margin:0;font:600 15px var(--serif)}
 .stars{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
-.star{background:none;border:0;padding:4px 3px;font-size:24px;line-height:1;color:var(--miss);cursor:pointer;min-width:34px;min-height:34px}
-.star.on{color:var(--accent)}
-.star:focus-visible,.star-clear:focus-visible{outline:2px solid var(--accent);border-radius:6px}
-.star-clear{background:none;border:0;color:var(--dim);font-size:12px;cursor:pointer;margin-left:6px;text-decoration:underline}
-.c-name,.c-body{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
-  background:var(--bg);color:var(--fg);font:inherit;font-size:16px}
-.c-body{resize:vertical;min-height:90px}
-.c-name:focus,.c-body:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.star{background:none;border:0;padding:4px 3px;font-size:25px;line-height:1;color:var(--miss);cursor:pointer;min-width:34px;min-height:34px}
+.star.on{color:var(--red)}
+.star:focus-visible,.star-clear:focus-visible{outline:2px solid var(--red)}
+.star-clear{background:none;border:0;color:var(--dim);font:12px var(--mono);cursor:pointer;margin-left:8px;text-decoration:underline}
+.c-name,.c-body{width:100%;padding:10px 12px;border:1px solid var(--hair);border-radius:0;
+  background:var(--paper);color:var(--ink);font:16px/1.6 var(--sans)}
+.c-body{resize:vertical;min-height:100px}
+.c-name:focus,.c-body:focus{outline:none;border-color:var(--red)}
 .c-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.c-count{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
-.c-submit{background:var(--accent);color:var(--bg);border:0;border-radius:8px;padding:8px 18px;font:inherit;font-weight:600;cursor:pointer}
+.c-count{font:12px var(--mono);color:var(--dim)}
+.c-submit{background:var(--ink);color:var(--paper);border:0;border-radius:0;padding:9px 22px;font:700 14px var(--sans);
+  letter-spacing:.2em;cursor:pointer}
+.c-submit:hover{background:var(--red)}
 .c-submit:disabled{opacity:.5;cursor:default}
-.c-msg{margin:0;font-size:12.5px;color:var(--dim);min-height:1em}
-.c-msg.err{color:#c0392b}
-.c-recent li{flex-wrap:wrap}
-.c-recent .c-excerpt{color:var(--dim);font-size:13px;flex-basis:100%}
+.c-msg{margin:0;font:12.5px var(--mono);color:var(--dim);min-height:1em}
+.c-msg.err{color:var(--red)}
+/* 首頁右欄的最近留言 */
+.linklist{list-style:none;margin:0;padding:0}
+.c-recent li{padding:8px 0;border-top:1px dotted var(--hair);display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}
+.c-recent li:first-child{border-top:0;padding-top:0}
+.c-recent .c-who{font-size:13px}
+.c-recent a{font:600 13.5px/1.5 var(--serif)}
+.c-recent .c-excerpt{flex-basis:100%;font-size:12.5px;color:var(--dim)}
+
+/* ── 頁尾 ── */
+.colophon{max-width:1180px;margin:50px auto 0;padding:0 24px 30px}
+.colophon p{display:flex;gap:8px 22px;flex-wrap:wrap;margin:10px 0 0;font:400 11.5px var(--mono);color:var(--dim)}
+.colophon p span:first-child{font:400 17px/1 var(--display);color:var(--ink)}
+.colophon em{color:var(--red)}
+.colophon a{border-bottom:1px solid var(--hair)}
+
+/* ── 響應式 ── */
+@media (max-width:980px){
+  .front{grid-template-columns:1fr}
+  .rail{border-left:0;padding-left:0;border-top:3px double var(--rule);padding-top:18px;margin-top:6px;
+    display:grid;grid-template-columns:1fr 1fr;gap:0 28px}
+  .rail-box:last-child{border-bottom:1px solid var(--hair)}
+}
+@media (max-width:720px){
+  main,.masthead,.bar,.colophon{padding-left:16px;padding-right:16px}
+  .mh-meta{justify-content:center;font-size:10.5px}
+  .mh-meta span:last-child{display:none}
+  .mh-tag{font-size:12px;letter-spacing:.1em}
+  .toolbar{flex-direction:column;align-items:stretch}
+  .filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 10px}
+  .filters::-webkit-scrollbar{display:none}
+  .filter{white-space:nowrap}
+  #q{flex:1 1 auto;width:100%}
+  .seconds{grid-template-columns:1fr}
+  .story,.story:first-child,.story:last-child{padding:18px 0;border-right:0;border-bottom:1px solid var(--hair)}
+  .rail{grid-template-columns:1fr}
+  .briefs ul{columns:1}
+  .idx-grid{grid-template-columns:1fr;gap:18px}
+  .rels{grid-template-columns:1fr}
+  .lead-deck{font-size:16.5px}
+  .prose{font-size:16px}
+}
 """
 
 JS = """
@@ -434,14 +694,15 @@ JS = """
   let idx=[]; let topic='';
   try{ idx=await (await fetch('search.json')).json(); }catch(e){}
 
+  const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function render(list){
     if(!list.length){ res.innerHTML='<p class="note">沒有符合的筆記。</p>'; return; }
     res.innerHTML=list.slice(0,60).map(n=>`
       <article class="card">
-        <a class="t" href="${n.u}">${n.t}</a>
-        <div class="m"><span class="chip">${n.k}</span>${n.d?`<span class="chip date">${n.d}</span>`:''}
-        ${(n.p||[]).map(p=>`<span class="chip topic">${p}</span>`).join('')}</div>
-        <p class="x">${(n.s||'').slice(0,150)}</p>
+        <a class="t" href="${esc(n.u)}">${esc(n.t)}</a>
+        <div class="m"><span class="chip">${esc(n.k)}</span>${n.d?`<span class="chip date">${esc(n.d)}</span>`:''}
+        ${(n.p||[]).map(p=>`<span class="chip topic">${esc(p)}</span>`).join('')}</div>
+        <p class="x">${esc((n.s||'').slice(0,150))}</p>
       </article>`).join('');
   }
   function apply(){

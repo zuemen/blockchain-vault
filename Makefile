@@ -28,10 +28,10 @@ peek-week: ## 試抓一週（週一補週末用）
 	$(PY) scripts/fetch_news.py --dry-run --hours 168
 
 fetch: ## 真的抓取並寫入事件卡＋每日筆記
-	$(PY) scripts/fetch_news.py --hours 36 --top 8
+	$(PY) scripts/fetch_news.py --hours 36 --top 15
 
 fetch-week: ## 抓 72 小時（週一用）
-	$(PY) scripts/fetch_news.py --hours 72 --top 10
+	$(PY) scripts/fetch_news.py --hours 72 --top 20
 
 build: ## 產生靜態網站到 site/
 	$(PY) scripts/build_site.py

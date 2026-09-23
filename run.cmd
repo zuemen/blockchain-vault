@@ -8,9 +8,9 @@ set PYTHONIOENCODING=utf-8
 rem 無論從哪個目錄呼叫，都切回 vault 根目錄
 cd /d "%~dp0"
 if "%1"=="peek"   ( python scripts\fetch_news.py --dry-run --hours 36 & goto end )
-if "%1"=="fetch"  ( python scripts\fetch_news.py --hours 36 --top 8 & goto end )
+if "%1"=="fetch"  ( python scripts\fetch_news.py --hours 36 --top 15 & goto end )
 if "%1"=="build"  ( python scripts\build_site.py & goto end )
-if "%1"=="update" ( python scripts\fetch_news.py --hours 36 --top 8 && python scripts\build_site.py & goto end )
+if "%1"=="update" ( python scripts\fetch_news.py --hours 36 --top 15 && python scripts\build_site.py & goto end )
 if "%1"=="status" ( python scripts\status.py & goto end )
 if "%1"=="unread" ( python scripts\status.py --unread & goto end )
 if "%1"=="serve"  ( python scripts\build_site.py && cd site && python -m http.server 8080 & goto end )
