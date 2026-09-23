@@ -30,10 +30,27 @@ TIER_BONUS = {"primary": 4, "trade": 0, "aggregator": -2}
 # 必須至少命中一個「核心詞」，否則扣重分。
 # 沒有這道閘，監理機關的例行公告（處分、人事、研討會）會靠 tier 加分霸佔榜首。
 CORE = ["zk", "零知識", "zero-knowledge", "ssi", "did", "verifiable credential",
-        "可驗證憑證", "數位身分", "rwa", "tokeniz*", "代幣化", "stablecoin", "穩定幣",
+        "可驗證憑證", "數位身分", "rwa", "tokeniz*", "tokenis*", "代幣化", "stablecoin", "穩定幣",
         "cbdc", "dvp", "blockchain", "區塊鏈", "distributed ledger", "digital asset",
         "虛擬資產", "數位資產", "settlement asset", "結算資產"]
 CORE_MISS_PENALTY = -8
+
+# 雜訊詞（活動宣傳、空投等）每命中一個扣分；清單在 feeds.yaml 的 noise
+NOISE_PENALTY = -6
+
+# 事件級去重：標題關鍵詞集合的 Jaccard 相似度 >= 此值視為同一事件。
+# 用真實資料校準過：不同媒體報導同一事件，標題相似度多落在 0.36–0.50，
+# 設 0.5 會漏掉大半；0.35 以上的配對實測全是真重複。可在 feeds.yaml 用 dedup_threshold 覆寫。
+DEDUP_THRESHOLD = float(CFG.get("dedup_threshold", 0.35))
+
+# 正規化時去掉的雜訊詞（不代表事件內容）
+TITLE_NOISE = ["news", "breaking", "exclusive", "update", "report", "報導", "快訊",
+               "獨家", "最新", "消息", "新聞"]
+# 英文停用詞：功能詞不算關鍵詞，否則會稀釋相似度
+STOPWORDS = {"a", "an", "the", "to", "of", "for", "in", "on", "and", "or", "with", "as",
+             "by", "at", "from", "is", "are", "be", "its", "it", "s", "into", "over",
+             "after", "via", "new", "says", "said", "will", "could", "may", "than"}
+STEM_LEN = 5          # 英文字截前 5 字母當粗略詞幹：tokenized/tokenised/tokenization → token
 
 
 def slugify(title: str) -> str:
@@ -74,7 +91,7 @@ def score(title: str, summary: str, tier: str):
     # 主題組合加分：兩組詞同時出現才是真正要找的訊號，單獨出現只是背景雜訊
     low = f"{t} {sm}"
     combos = [
-        (["代幣化", "tokeniz*"], ["結算", "settle*", "dvp", "cbdc"], 4),
+        (["代幣化", "tokeniz*", "tokenis*"], ["結算", "settle*", "dvp", "cbdc"], 4),
         (["穩定幣", "stablecoin"], ["法規", "監理", "regulat*", "licence", "license"], 3),
         (["ssi", "did", "verifiable credential", "可驗證憑證", "數位身分"],
          ["kyc", "aml", "法規", "監理", "regulat*"], 4),
@@ -88,6 +105,10 @@ def score(title: str, summary: str, tier: str):
             s += bonus
 
     s = min(s, 20)                          # 上限 20
+
+    # 雜訊詞：活動宣傳稿、空投等，每命中一個扣分（宣傳詞越多越像宣傳稿）
+    noise_hits = [n for n in CFG.get("noise", []) if matches(n, low)]
+    s += NOISE_PENALTY * len(noise_hits)
     core_hit = any(matches(c, low) for c in CORE)
     # tier 加分只在命中核心主題時才給，否則一手來源的例行公告會蓋掉真正相關的報導
     s += TIER_BONUS.get(tier, 0) if core_hit else CORE_MISS_PENALTY
@@ -99,7 +120,7 @@ def topics_of(hits):
     m = {
         "ZK": ["ZK", "零知識", "zero-knowledge", "zk-proof"],
         "SSI": ["SSI", "DID", "verifiable credential", "可驗證憑證", "數位身分"],
-        "RWA": ["RWA", "tokeniz", "代幣化", "代幣化存款", "deposit token", "DvP", "settle", "結算"],
+        "RWA": ["RWA", "tokeniz", "tokenis", "代幣化", "代幣化存款", "deposit token", "DvP", "settle", "結算"],
         "金融法規": ["regulat", "licens", "法規", "監理", "金管會", "FinCEN", "SEC", "HKMA", "SFC", "BIS"],
         "穩定幣": ["stablecoin", "穩定幣", "CBDC", "wCBDC"],
     }
@@ -107,15 +128,74 @@ def topics_of(hits):
     return out or ["其他"]
 
 
-def existing_keys():
-    """已存在的事件：用標題前 20 字去重。"""
-    keys = set()
+def title_tokens(title: str) -> frozenset:
+    """把標題轉成關鍵詞集合：英文取詞幹、中文取 2-gram。
+
+    正規化：NFKC、轉小寫、去掉雜訊詞與所有格 's、去停用詞；
+    標點與空白自然被切詞時丟掉。只用標準庫。
+    """
+    t = unicodedata.normalize("NFKC", title).lower().replace("’", "'")
+    for w in TITLE_NOISE:
+        t = t.replace(w, " ")
+    t = re.sub(r"'s\b", " ", t)
+    words = {w[:STEM_LEN] for w in re.findall(r"[a-z0-9]+", t) if w not in STOPWORDS}
+    grams = set()
+    for run in re.findall(r"[一-鿿]+", t):          # 每段連續中文各自切 2-gram，不跨標點
+        grams |= {run[i:i + 2] for i in range(len(run) - 1)} or {run}
+    return frozenset(words | grams)
+
+
+def jaccard(a, b) -> float:
+    """兩個集合的 Jaccard 相似度：交集 / 聯集。"""
+    return len(a & b) / len(a | b) if (a or b) else 0.0
+
+
+def same_event(a, b) -> bool:
+    return jaccard(a, b) >= DEDUP_THRESHOLD
+
+
+def existing_events():
+    """已存在的事件卡：回傳 [(標題, 關鍵詞集合)]，供跨日去重。"""
+    out = []
     for f in EVENTS.glob("*.md"):
         head = f.read_text(encoding="utf-8")[:600]
         mt = re.search(r"^title:\s*(.+)$", head, re.M)
         if mt:
-            keys.add(mt.group(1).strip()[:20])
-    return keys
+            title = mt.group(1).strip()
+            out.append((title, title_tokens(title)))
+    return out
+
+
+def dedup(items):
+    """本次抓取內部的事件級去重。
+
+    用 union-find 把相似的報導串成同一群（A 像 B、B 像 C 時三者同群），
+    每群保留分數最高者；同分時一手來源優先。其餘報導記在 dupes 供 dry-run 檢視。
+    """
+    toks = [title_tokens(it["title"]) for it in items]
+    parent = list(range(len(items)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            if same_event(toks[i], toks[j]):
+                parent[find(i)] = find(j)
+
+    groups = {}
+    for i in range(len(items)):
+        groups.setdefault(find(i), []).append(i)
+    out = []
+    for idx in groups.values():
+        idx.sort(key=lambda i: (-items[i]["score"], items[i]["tier"] != "primary"))
+        keep = dict(items[idx[0]], tokens=toks[idx[0]])
+        keep["dupes"] = [items[i] for i in idx[1:]]
+        out.append(keep)
+    return out
 
 
 def collect(hours):
@@ -142,13 +222,8 @@ def collect(hours):
                 items.append(dict(title=title, url=e.get("link", ""), source=src["name"],
                                   tier=tier, when=when.astimezone(TZ), score=sc,
                                   hits=hits, summary=summary.strip()))
-    # 同標題去重，保留分數高者（等於優先一手來源）
-    best = {}
-    for it in items:
-        k = it["title"][:20]
-        if k not in best or it["score"] > best[k]["score"]:
-            best[k] = it
-    return sorted(best.values(), key=lambda x: -x["score"])
+    # 事件級去重：不同媒體報導同一件事只留一則，保留分數高者（等於優先一手來源）
+    return sorted(dedup(items), key=lambda x: -x["score"])
 
 
 def write_event(it):
@@ -198,14 +273,21 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
-    seen = existing_keys()
-    items = [i for i in collect(a.hours) if i["title"][:20] not in seen][: a.top]
+    seen = existing_events()
+    fresh, skipped = [], []
+    for it in collect(a.hours):
+        # 跟已存在的事件卡比對，同一事件就不再開新卡
+        match = next((t for t, tk in seen if same_event(it["tokens"], tk)), None)
+        (skipped if match else fresh).append((it, match))
+    items = [it for it, _ in fresh][: a.top]
     today = dt.datetime.now(TZ).date().isoformat()
 
     lines = []
     for it in items:
         if a.dry_run:
             print(f"[{it['score']:>2}] {it['tier']:<7} {it['title'][:70]}")
+            for d in it["dupes"]:                      # 被合併的同事件報導
+                print(f"       ↳ 合併 [{d['score']:>2}] {d['source'][:14]:<14} {d['title'][:52]}")
             continue
         p = write_event(it)
         if p:
@@ -214,6 +296,12 @@ def main():
             lines.append(f"- [[{p.stem}]] — score {it['score']} — {tag}命中：{reason}")
 
     if a.dry_run:
+        if skipped:
+            print(f"\n── 已有事件卡、略過 {len(skipped)} 則 ──")
+            for it, match in skipped:
+                print(f"[{it['score']:>2}] {it['title'][:48]}  ≈ 既有：{match[:30]}")
+                for d in it["dupes"]:
+                    print(f"       ↳ 合併 [{d['score']:>2}] {d['source'][:14]:<14} {d['title'][:52]}")
         return
 
     dpath = DAILY / f"{today}.md"

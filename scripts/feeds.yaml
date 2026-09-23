@@ -51,6 +51,7 @@ weights:
   數位身分: 2
   RWA: 3
   "tokeniz*": 2
+  "tokenis*": 2          # 英式拼法 tokenised / tokenisation
   代幣化: 2
   stablecoin: 2
   穩定幣: 2
@@ -75,3 +76,25 @@ weights:
   deposit token: 3
   代幣化存款: 3
   託管: 1
+
+# 雜訊詞：活動宣傳、空投、行銷。每命中一個扣 6 分（fetch_news.py 的 NOISE_PENALTY）
+noise:
+  - 晚宴
+  - 酒會
+  - 峰會
+  - 論壇
+  - 嘉賓
+  - 報名
+  - 贊助
+  - 空投
+  - airdrop
+  - AMA
+  - giveaway
+  - 限時
+  - 優惠
+  - 將亮相
+  - 盛大
+  - 即將舉行
+
+# 事件級去重門檻（標題關鍵詞 Jaccard 相似度），見 fetch_news.py 的 DEDUP_THRESHOLD
+dedup_threshold: 0.35
