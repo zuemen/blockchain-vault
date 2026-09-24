@@ -109,7 +109,7 @@ repo Markdown ──▶ build_site.py ──▶ 靜態頁（筆記、週報）�
 |---|---|
 | concept | `maturity: seed|growing|stable` |
 | entity | `category`、`jurisdiction`（值在 taxonomy）、`watch`（對應 watchlist id，選填） |
-| regulation | `jurisdiction`、`regulator`、`stage: 1–5`、`tracks`、`review: 待核對|已核對`；`effective_date` 改成 ISO 日期或空值 |
+| regulation | `jurisdiction`、`regulator`、`stage: 1–5`、`tracks`、`review: 待核對|已核對`；`effective_date` 改成 `YYYY`／`YYYY-MM`／`YYYY-MM-DD` 或空值；原本的附註文字（例如「最晚」「提案日」）移到 `effective_note` |
 | event（精選） | `date`、`cluster`（D1 分組 id）、`source_url` |
 | output | `kind: 週報|講稿`、`date`、`week`、`clusters`（陣列） |
 
