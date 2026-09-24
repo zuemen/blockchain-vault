@@ -39,3 +39,12 @@ def test_ids_unique(vault_with_templates):
     a = parse_note(new_note.create_note(vault_with_templates, "concept", "甲", "2026-09-25")).fm["id"]
     b = parse_note(new_note.create_note(vault_with_templates, "concept", "乙", "2026-09-25")).fm["id"]
     assert a != b
+
+
+def test_raw_template_gives_clear_error(tmp_vault, tax):
+    raw = (ROOT / "templates" / "concept.md").read_text(encoding="utf-8").replace("{{date}}", "2026-09-25")
+    p = tmp_vault / "20-concepts" / "raw.md"
+    p.write_text(raw, encoding="utf-8")
+    msgs = [i.msg for i in validate.validate_note(parse_note(p), tax)]
+    assert "id 格式不對：{{id}}" in msgs
+    assert not any(m.startswith("YAML 解析失敗") for m in msgs)

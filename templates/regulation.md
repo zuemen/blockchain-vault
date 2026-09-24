@@ -1,7 +1,7 @@
 ---
 type: regulation
-id: {{id}}
-title: {{title}}
+id: "{{id}}"
+title: "{{title}}"
 origin: human
 jurisdiction:
 regulator:

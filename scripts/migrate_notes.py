@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from notes import FM_RE, first_heading, is_legacy_auto, iter_notes, new_id, parse_note
+from notes import FM_RE, first_heading, is_legacy_auto, iter_notes, new_id
 
 ROOT = Path(__file__).resolve().parent.parent
 REMOVE_ALWAYS = {"keyword_hits", "used_in"}

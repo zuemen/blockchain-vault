@@ -24,8 +24,8 @@ def create_note(root: Path, kind: str, title: str, today: str) -> Path:
     ids = {str(n.fm["id"]) for n in iter_notes(root) if n.fm.get("id")}
     tpl = (root / "templates" / f"{kind}.md").read_text(encoding="utf-8")
     tpl = (tpl.replace("{{date}}", today)
-              .replace("{{id}}", new_id(ids))
-              .replace("{{title}}", json.dumps(title, ensure_ascii=False)))
+              .replace('"{{id}}"', new_id(ids))
+              .replace('"{{title}}"', json.dumps(title, ensure_ascii=False)))
     tpl = tpl.replace("# 概念名稱", f"# {title}").replace("# 名稱", f"# {title}") \
              .replace("# 法規名稱", f"# {title}")
     name = f"{today}-{slug(title)}.md" if kind == "event" else f"{slug(title)}.md"

@@ -1,7 +1,7 @@
 ---
 type: event
-id: {{id}}
-title: {{title}}
+id: "{{id}}"
+title: "{{title}}"
 origin: human
 date: {{date}}
 source_url:

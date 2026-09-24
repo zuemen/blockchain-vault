@@ -1,7 +1,7 @@
 ---
 type: concept
-id: {{id}}
-title: {{title}}
+id: "{{id}}"
+title: "{{title}}"
 origin: human
 topics: []
 maturity: seed
