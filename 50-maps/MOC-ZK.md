@@ -1,5 +1,8 @@
 ---
 type: moc
+id: xnvqsjm4
+title: "MOC — 零知識證明"
+origin: ai
 topics: [ZK]
 updated: 2026-09-23
 ---

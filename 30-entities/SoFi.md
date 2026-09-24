@@ -1,5 +1,8 @@
 ---
 type: entity
+id: wwjoffx3
+title: "SoFi"
+origin: ai
 category: 銀行／發幣人
 jurisdiction: 美國
 topics: [穩定幣, 支付]

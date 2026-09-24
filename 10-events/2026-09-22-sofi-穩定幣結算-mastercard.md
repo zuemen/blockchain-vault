@@ -1,5 +1,7 @@
 ---
 type: event
+id: yzksf52g
+origin: ai
 date: 2026-09-22
 title: SoFi 成為首家在 Mastercard 網路上線穩定幣結算的全國性銀行
 source_url: https://investors.sofi.com/news/news-details/2026/SoFi-Becomes-First-National-Bank-to-Go-Live-with-Stablecoin-Settlement-across-Mastercards-Global-Payments-Network/default.aspx
@@ -10,8 +12,6 @@ entities: ["[[SoFi]]", "[[Mastercard]]", "[[Visa]]", "[[Anchorage-Digital-Bank]]
 regulations: []
 concepts: ["[[結算]]", "[[cash-leg]]", "[[原子結算]]"]
 score: 8
-status: cited
-used_in: ["日報 2026-09-23"]
 ---
 
 ## 一句話

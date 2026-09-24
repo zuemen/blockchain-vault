@@ -1,5 +1,8 @@
 ---
 type: regulation
+id: one77aou
+title: "歐盟 MiCA 穩定幣規定（EMT／ART）"
+origin: ai
 jurisdiction: 歐盟
 regulator: EBA（重大 ART／EMT）、ESMA、各國主管機關；ECB 參與貨幣政策面
 status: 施行中（2024-06-30 起）；已有授權 EMT 上線流通；MiCA 檢討諮詢中

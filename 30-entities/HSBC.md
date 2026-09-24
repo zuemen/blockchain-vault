@@ -1,5 +1,8 @@
 ---
 type: entity
+id: w5vpjmll
+title: "HSBC 滙豐"
+origin: ai
 category: 銀行／穩定幣發行人
 jurisdiction: 香港 / 全球
 topics: [穩定幣, RWA]
