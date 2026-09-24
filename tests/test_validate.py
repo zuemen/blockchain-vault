@@ -146,3 +146,10 @@ def test_report_returns_error_count(tmp_vault, capsys):
     assert validate.report(issues, tmp_vault) == 1
     out = capsys.readouterr().out
     assert "20-concepts/a.md" in out and "壞" in out and "注意" in out
+
+
+def test_frontmatter_links_checked(tmp_vault, tax):
+    text = GOOD_CONCEPT.replace("topics: [RWA]", 'topics: [RWA]\nentities: ["[[不存在的機構]]"]')
+    write(tmp_vault / "20-concepts" / "x.md", text)
+    out = validate.validate_all(tmp_vault, tax)
+    assert any(i.msg == "wikilink 找不到筆記：[[不存在的機構]]" for i in out)

@@ -117,7 +117,8 @@ def validate_all(root: Path, tax: dict) -> list:
     for n in all_notes:
         if n.error:
             continue
-        for m in WIKI_RE.finditer(n.body):
+        text = n.body + "\n" + "\n".join(str(v) for v in n.fm.values())
+        for m in WIKI_RE.finditer(text):
             target = m.group(1).strip()
             if target.startswith(("news:", "event:")):
                 continue
