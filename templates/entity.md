@@ -1,5 +1,8 @@
 ---
 type: entity
+id: {{id}}
+title: {{title}}
+origin: human
 category:
 jurisdiction:
 topics: []

@@ -1,17 +1,11 @@
 ---
 type: event
+id: {{id}}
+title: {{title}}
+origin: human
 date: {{date}}
-title:
 source_url:
-source_name:
-source_tier: trade
 topics: []
-entities: []
-regulations: []
-concepts: []
-score: 0
-status: unread
-used_in: []
 ---
 
 ## 一句話
