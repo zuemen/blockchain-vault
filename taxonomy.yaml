@@ -1,0 +1,33 @@
+# 分類詞彙唯一來源。抓取、評分、標記、建站、驗證都只讀這一份。
+# 筆記 frontmatter 的 topics / jurisdiction / tracks / maturity / origin 值必須出現在這裡。
+
+limits:
+  daily_top: 60       # 每天最多開幾個新事件分組（階段 2 起生效）
+  min_score: 3
+
+topics: [RWA, 穩定幣, 金融法規, SSI, ZK, 支付, 重點機構]
+
+jurisdictions: [美國, 歐盟, 英國, 香港, 新加坡, 日本, 韓國, 台灣, 加拿大, 全球]
+
+tracks: [穩定幣, 結算／存款代幣, 代幣化證券／RWA, 數位身分, 虛擬資產業者]
+
+stages:
+  1: 研議
+  2: 草案
+  3: 已通過
+  4: 施行中
+  5: 市場運作
+
+maturity: [seed, growing, stable]
+
+origins: [ai, ai-reviewed, human]
+
+watchlist:
+  - {id: chainlink,  name: Chainlink,            aliases: [Chainlink, CCIP]}
+  - {id: kinexys,    name: Kinexys（原 Onyx）,    aliases: [Kinexys, Onyx by J.P. Morgan]}
+  - {id: jpmorgan,   name: JPMorgan,             aliases: [JPMorgan, J.P. Morgan, JP Morgan, 摩根大通]}
+  - {id: fidelity,   name: Fidelity,             aliases: [Fidelity, 富達]}
+  - {id: bny,        name: BNY,                  aliases: [BNY, BNY Mellon, 紐約梅隆]}
+  - {id: fireblocks, name: Fireblocks,           aliases: [Fireblocks]}
+  - {id: zk,         name: Zero knowledge,       aliases: [zero knowledge, ZKP, zkEVM, 零知識]}
+  - {id: polygon,    name: Polygon／Privado ID,  aliases: [Polygon, Polygon ID, Privado ID]}
