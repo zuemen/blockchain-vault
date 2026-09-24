@@ -23,7 +23,10 @@ class Note:
 
 
 def parse_note(path: Path) -> Note:
-    raw = Path(path).read_text(encoding="utf-8")
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        return Note(path, {}, "", f"無法讀取：{e.__class__.__name__}")
     m = FM_RE.match(raw)
     if not m:
         return Note(path, {}, raw, "缺少 frontmatter")

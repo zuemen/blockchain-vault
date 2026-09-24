@@ -57,3 +57,11 @@ def test_iter_notes_and_legacy(tmp_vault):
     assert set(got) == {"a.md", "b.md"}
     assert notes.is_legacy_auto(got["a.md"]) is True
     assert notes.is_legacy_auto(got["b.md"]) is False
+
+
+def test_parse_non_utf8_reports_error(tmp_path):
+    p = tmp_path / "a.md"
+    p.write_bytes("---\ntype: moc\n---\n中文".encode("big5"))
+    n = notes.parse_note(p)
+    assert n.error == "無法讀取：UnicodeDecodeError"
+    assert n.fm == {}
