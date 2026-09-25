@@ -96,14 +96,22 @@ export async function ingest(db, ai, raw, skipAI, runId) {
     }
   }
 
-  // 新分組：只替真的要寫入的報導開，全是重複的就不開（避免留下空分組）
+  // 新分組：只替真的要寫入的報導開，全是重複的就不開（避免留下空分組）。
+  // 編號先從 MAX(id) 預先配好，分組與新聞在同一個 db.batch（同一個交易）寫入：
+  // 任何一句失敗整批回滾，不會留下空分組。讀完編號後若有別的寫入者搶先建分組，
+  // 主鍵衝突讓整批失敗（回 503），呼叫端重試即可。
   const newRefs = [...new Set(fresh.map((i) => i.cluster_ref)
     .filter((r) => typeof r === "string" && clusters[r] === undefined))];
+  const stmts = [];
   if (newRefs.length) {
+    const { results } = await db.prepare("SELECT COALESCE(MAX(id), 0) AS max FROM clusters").all();
+    const max = results[0].max;
     const now = new Date().toISOString();
-    const res = await db.batch(newRefs.map(() =>
-      db.prepare("INSERT INTO clusters (first_seen, last_seen, item_count) VALUES (?, ?, 0) RETURNING id").bind(now, now)));
-    newRefs.forEach((ref, k) => { clusters[ref] = res[k].results[0].id; });
+    newRefs.forEach((ref, k) => {
+      clusters[ref] = max + 1 + k;
+      stmts.push(db.prepare("INSERT INTO clusters (id, first_seen, last_seen, item_count) VALUES (?, ?, ?, 0)")
+        .bind(clusters[ref], now, now));
+    });
   }
   const clusterOf = (it) => (typeof it.cluster_ref === "string" ? clusters[it.cluster_ref] : it.cluster_ref);
 
@@ -111,7 +119,6 @@ export async function ingest(db, ai, raw, skipAI, runId) {
   const sums = skipAI ? fresh.map(() => null) : await Promise.all(fresh.map((it) => summarize(ai, it)));
   let aiFailed = 0;
   const fetchedAt = new Date().toISOString();
-  const stmts = [];
   fresh.forEach((it, k) => {
     const s = sums[k];
     if (!skipAI && !s) aiFailed++;
