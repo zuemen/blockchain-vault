@@ -31,3 +31,124 @@ watchlist:
   - {id: fireblocks, name: Fireblocks,           aliases: [Fireblocks]}
   - {id: zk,         name: Zero knowledge,       aliases: [zero knowledge, ZKP, zkEVM, 零知識]}
   - {id: polygon,    name: Polygon／Privado ID,  aliases: [Polygon, Polygon ID, Privado ID]}
+
+# ── 轄區判斷規則（新聞標記與各國進度共用）──
+# keywords 比對標題與內文；sources 比對來源名稱開頭；title_only 的詞只在標題裡算數
+jurisdiction_rules:
+  美國:
+    keywords: [美國, 美联储, 聯準會, 美國財政部, U.S., US, American, SEC, Fed, Federal Reserve,
+               OCC, FDIC, CFTC, FinCEN, Treasury, GENIUS, Congress, White House,
+               SoFi, Mastercard, Visa, Circle, Coinbase, JPMorgan, BlackRock, Paxos,
+               Anchorage, Ondo, Nasdaq, NYSE, DTCC, Citi, Goldman, Fiserv]
+    sources: [SEC, Federal Reserve, OCC, FDIC, CFTC, FinCEN]
+  歐盟:
+    keywords: [歐盟, 歐洲央行, 欧盟, EU, European, Europe, ECB, Eurosystem, ESMA, EBA, MiCA]
+    sources: [ECB, ESMA, EBA]
+  英國:
+    keywords: [英國, 英国, UK, U.K., Britain, British, Bank of England, BoE, FCA]
+    sources: [Bank of England]
+  香港:
+    keywords: [香港, Hong Kong, HKMA, 金管局, 證監會, SFC]
+    sources: [HKMA, SFC HK]
+  新加坡: {keywords: [新加坡, Singapore, MAS], sources: [MAS]}
+  日本: {keywords: [日本, Japan, Japanese, JFSA], sources: [Japan FSA]}
+  韓國: {keywords: [韓國, 韩国, 南韓, Korea, Korean, Kakao, KakaoBank, Upbit, Naver], sources: []}
+  台灣: {keywords: [台灣, 臺灣, Taiwan, 金管會, 央行總裁], sources: [金管會]}
+  加拿大: {keywords: [加拿大, Canada, Canadian], sources: []}
+
+title_only: [US, U.S., American, Treasury, Fed, Congress, Europe, European, EU,
+             UK, U.K., British, Korean, Japanese, Canadian, Visa, Mastercard, Circle]
+
+# ── 新聞評分（fetch_news.py）──
+# 關鍵詞比對規則見 scripts/tagging.py 的 matches()：全大寫縮寫區分大小寫，尾端 * 表示字根
+scoring:
+  cap: 20                  # 關鍵詞＋組合加分的上限；之後才加減雜訊與 tier
+  tier_bonus: {primary: 4, trade: 0, aggregator: -2}
+  core_miss_penalty: -8    # 沒命中任何 core 詞
+  noise_penalty: -6        # 每命中一個雜訊詞
+  weights:
+    ZK: 3
+    零知識: 3
+    zero-knowledge: 3
+    zk-proof: 3
+    SSI: 3
+    DID: 3
+    "verifiable credential*": 3
+    可驗證憑證: 3
+    數位身分: 2
+    RWA: 3
+    "tokeniz*": 2
+    "tokenis*": 2
+    代幣化: 2
+    "stablecoin*": 2          # 字根：stablecoins 也要算
+    穩定幣: 2
+    "settle*": 2
+    結算: 2
+    DvP: 3
+    wCBDC: 3
+    CBDC: 2
+    "regulat*": 2
+    法規: 2
+    監理: 2
+    金管會: 3
+    FSC: 1
+    HKMA: 2
+    SFC: 2
+    FinCEN: 3
+    SEC: 2
+    BIS: 2
+    "custod*": 1
+    "licens*": 2
+    licence: 2
+    "deposit token*": 3
+    代幣化存款: 3
+    託管: 1
+    Chainlink: 3
+    CCIP: 3
+    Kinexys: 3
+    Onyx: 2
+    JPMorgan: 2
+    J.P. Morgan: 2
+    JP Morgan: 2
+    摩根大通: 2
+    Fidelity: 2
+    富達: 2
+    BNY: 2
+    紐約梅隆: 2
+    Fireblocks: 3
+    Polygon: 2
+    Polygon ID: 3
+    Privado ID: 3
+    zero knowledge: 3
+    ZKP: 3
+    zkEVM: 3
+    Hyperledger: 2
+  combos:                  # a 組與 b 組各命中至少一個才加分
+    - {a: [代幣化, "tokeniz*", "tokenis*"], b: [結算, "settle*", DvP, CBDC], bonus: 4}
+    - {a: [穩定幣, "stablecoin*"], b: [法規, 監理, "regulat*", licence, license], bonus: 3}
+    - {a: [SSI, DID, "verifiable credential*", 可驗證憑證, 數位身分], b: [KYC, AML, 法規, 監理, "regulat*"], bonus: 4}
+    - {a: [ZK, 零知識, zero-knowledge], b: [身分, identity, 隱私, privacy, compliance, 法遵], bonus: 4}
+    - {a: [RWA, 代幣化], b: [基金, fund, 債券, bond, 黃金, gold, 存款, deposit], bonus: 3}
+  core: [ZK, 零知識, zero-knowledge, SSI, DID, "verifiable credential*", 可驗證憑證, 數位身分, RWA,
+         "tokeniz*", "tokenis*", 代幣化, "stablecoin*", 穩定幣, CBDC, DvP, blockchain, 區塊鏈,
+         distributed ledger, "digital asset*", 虛擬資產, 數位資產, settlement asset, 結算資產,
+         Chainlink, CCIP, Kinexys, Fireblocks, Polygon ID, Privado ID, zero knowledge, ZKP, zkEVM, Hyperledger]
+  # 泛用詞：標題沒有同時命中 core 詞時不計分（Polygon 幾何、Fidelity 保險、Onyx 他牌）
+  generic: [Polygon, Fidelity, 富達, Onyx]
+  noise: [晚宴, 酒會, 峰會, 論壇, 嘉賓, 報名, 贊助, 空投, airdrop, AMA, giveaway, 限時, 優惠,
+          將亮相, 盛大, 即將舉行, price prediction, price analysis, 價格預測]
+  topic_map:               # 新聞 topic 標記：命中任一詞就標該主題
+    ZK: [ZK, 零知識, zero-knowledge, zk-proof, zero knowledge, ZKP, zkEVM]
+    SSI: [SSI, DID, "verifiable credential*", 可驗證憑證, 數位身分]
+    RWA: [RWA, "tokeniz*", "tokenis*", 代幣化, 代幣化存款, "deposit token*", DvP, "settle*", 結算]
+    金融法規: ["regulat*", "licens*", licence, 法規, 監理, 金管會, FinCEN, SEC, HKMA, SFC, BIS]
+    穩定幣: ["stablecoin*", 穩定幣, CBDC, wCBDC]
+    重點機構: [Chainlink, CCIP, Kinexys, Onyx, JPMorgan, J.P. Morgan, JP Morgan, 摩根大通, Fidelity, 富達,
+             BNY, 紐約梅隆, Fireblocks, Polygon, Polygon ID, Privado ID, Hyperledger]
+
+# ── 事件分組（scripts/clustering.py）──
+clustering:
+  model: sentence-transformers/LaBSE   # 校準結果見 docs/decisions.md；換模型要同步改 news.yml 的快取 key
+  threshold: 0.67          # cosine 門檻
+  window_days: 14          # 新報導跟幾天內的報導比對
+  jaccard_fallback: 0.35   # 模型載入失敗時退回標題 Jaccard 的門檻

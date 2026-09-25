@@ -4,7 +4,8 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-REQUIRED = ("limits", "topics", "jurisdictions", "tracks", "stages", "maturity", "origins", "watchlist")
+REQUIRED = ("limits", "topics", "jurisdictions", "tracks", "stages", "maturity", "origins", "watchlist",
+            "jurisdiction_rules", "title_only", "scoring", "clustering")
 
 
 class TaxonomyError(ValueError):
@@ -24,4 +25,7 @@ def load_taxonomy(path: Path = ROOT / "taxonomy.yaml") -> dict:
     ids = [w["id"] for w in data["watchlist"]]
     if len(ids) != len(set(ids)):
         raise TaxonomyError("watchlist id 重複")
+    unknown = [j for j in data["jurisdiction_rules"] if j not in data["jurisdictions"]]
+    if unknown:
+        raise TaxonomyError("jurisdiction_rules 有不在 jurisdictions 的轄區：" + ", ".join(unknown))
     return data
