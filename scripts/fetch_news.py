@@ -92,7 +92,11 @@ def collect(hours: int, cfg: dict, sc: dict):
             err = f"HTTP {fp.get('status')}" if (fp.get("status") or 0) >= 400 else ""
             if not fp.entries and fp.get("bozo"):
                 err = err or f"解析失敗：{fp.get('bozo_exception')}"
-            got = [x for x in (parse_entry(e, src, tier, sc, cutoff, now) for e in fp.entries) if x]
+            try:
+                got = [x for x in (parse_entry(e, src, tier, sc, cutoff, now) for e in fp.entries) if x]
+            except Exception as e:           # 格式怪的項目只讓這個來源失敗，不中斷整批
+                stats[src["name"]] = (len(fp.entries), 0, f"解析項目失敗：{e.__class__.__name__}: {e}")
+                continue
             items += got
             secs = time.monotonic() - t0
             if secs > 10:

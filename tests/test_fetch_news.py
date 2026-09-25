@@ -97,3 +97,19 @@ def test_prepare_payload_limit(tmp_vault, tax, monkeypatch):
              _news("Completely different stablecoin law", "https://b.com/2", 4)]
     assert len(prepare_payload(items, [], tax, None, "bot", root=tmp_vault)) == 1
     assert len(prepare_payload(items, [], tax, None, "import", limit=False, root=tmp_vault)) == 2
+
+
+def test_collect_skips_source_whose_entries_crash_parsing(tax, monkeypatch):
+    class FP(dict):
+        def __init__(self, entries):
+            super().__init__(status=200, bozo=0)
+            self.entries = entries
+    good = entry(link="https://coindesk.com/a", title="Banks tokenize deposits", source=None, published_parsed=None)
+    bad = entry(source="Reuters")                      # 格式怪的 Google News 項目：source 不是 dict
+    feeds = {"https://coindesk.com/rss": FP([good])}
+    monkeypatch.setattr(fetch_news.feedparser, "parse",
+                        lambda url, agent: feeds.get(url) or FP([bad]))
+    cfg = {"trade": [RSS_SRC], "aggregator": [GN_SRC]}
+    items, stats = fetch_news.collect(36, cfg, tax["scoring"])
+    assert [i["title"] for i in items] == ["Banks tokenize deposits"]
+    assert stats["GN Chainlink"][1] == 0 and "AttributeError" in stats["GN Chainlink"][2]
