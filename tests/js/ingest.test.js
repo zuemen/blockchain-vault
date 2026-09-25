@@ -83,10 +83,11 @@ test("skip_ai 不呼叫 AI；沒綁 AI 算失敗但照樣入庫", async () => {
 test("重複網址（資料庫已有、同批重複）算 duplicates；全重複時不開空分組", async () => {
   const DB = fakeD1();
   const env = { DB, INGEST_TOKEN: TOKEN, AI: okAI };
-  await post(env, { items: [item(1)] });
+  const first = await post(env, { items: [item(1)] });
   const r = await post(env, { items: [item(1), item(2, { cluster_ref: "new:2" }), item(2, { cluster_ref: "new:2" })] });
   assert.deepEqual([r.body.inserted, r.body.duplicates], [1, 2]);
-  assert.deepEqual(Object.keys(r.body.clusters), ["new:2"]);   // new:1 全是重複，不開組
+  assert.equal(r.body.clusters["new:1"], first.body.clusters["new:1"]); // 重複不開組，仍回傳對照
+  assert.ok(r.body.clusters["new:2"]);
   assert.equal(rows(DB, "SELECT COUNT(*) AS n FROM clusters")[0].n, 2);
 });
 

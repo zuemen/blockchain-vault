@@ -60,11 +60,18 @@ export async function ingest(db, ai, raw, skipAI, runId) {
   // 網址重複：資料庫已有，或同一批前面已出現。重複不算錯誤。
   const urls = [...new Set(valid.map((i) => i.url_canonical))];
   const known = new Set();
+  const clusters = {};
   if (urls.length) {
     const { results } = await db
-      .prepare(`SELECT url_canonical FROM news_items WHERE url_canonical IN (${placeholders(urls.length)})`)
+      .prepare(`SELECT url_canonical, cluster_id FROM news_items WHERE url_canonical IN (${placeholders(urls.length)})`)
       .bind(...urls).all();
     results.forEach((r) => known.add(r.url_canonical));
+    // 寫入成功但回應遺失時，重試仍須回傳分組對照，後續批次才能沿用。
+    const stored = new Map(results.map((r) => [r.url_canonical, r.cluster_id]));
+    for (const it of valid) {
+      const id = stored.get(it.url_canonical);
+      if (typeof it.cluster_ref === "string" && Number.isInteger(id)) clusters[it.cluster_ref] ??= id;
+    }
   }
   const fresh = [];
   for (const it of valid) {
@@ -87,8 +94,8 @@ export async function ingest(db, ai, raw, skipAI, runId) {
   }
 
   // 新分組：只替真的要寫入的報導開，全是重複的就不開（避免留下空分組）
-  const clusters = {};
-  const newRefs = [...new Set(fresh.map((i) => i.cluster_ref).filter((r) => typeof r === "string"))];
+  const newRefs = [...new Set(fresh.map((i) => i.cluster_ref)
+    .filter((r) => typeof r === "string" && clusters[r] === undefined))];
   if (newRefs.length) {
     const now = new Date().toISOString();
     const res = await db.batch(newRefs.map(() =>
