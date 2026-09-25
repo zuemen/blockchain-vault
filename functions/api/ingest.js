@@ -19,8 +19,11 @@ const INSERT_ITEM = `INSERT INTO news_items (url_canonical, url_original, url_re
   source_feed, tier, lang, published_at, fetched_at, summary, summary_by, score, cluster_id, added_by)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (url_canonical) DO NOTHING`;
 
-const INSERT_TAG = `INSERT OR IGNORE INTO news_tags (news_id, kind, key)
-  SELECT id, ?, ? FROM news_items WHERE url_canonical = ?`;
+// 每批最多 400 個標記：用一個 JSON 參數寫入，避免逐個標記耗盡 D1 查詢額度。
+const INSERT_TAGS = `INSERT OR IGNORE INTO news_tags (news_id, kind, key)
+  SELECT n.id, json_extract(t.value, '$.kind'), json_extract(t.value, '$.key')
+  FROM json_each(?) AS t JOIN news_items AS n
+    ON n.url_canonical = json_extract(t.value, '$.url')`;
 
 const placeholders = (n) => Array(n).fill("?").join(",");
 
@@ -119,8 +122,9 @@ export async function ingest(db, ai, raw, skipAI, runId) {
       it.url_canonical, it.url_original, it.url_resolved, it.title, s?.title_zh ?? null, it.outlet,
       it.source_feed, it.tier, it.lang, it.published_at, fetchedAt, summary, summaryBy, it.score,
       clusterOf(it), it.added_by));
-    for (const t of it.tags) stmts.push(db.prepare(INSERT_TAG).bind(t.kind, t.key, it.url_canonical));
   });
+  const tags = fresh.flatMap((it) => it.tags.map((t) => ({ ...t, url: it.url_canonical })));
+  if (tags.length) stmts.push(db.prepare(INSERT_TAGS).bind(JSON.stringify(tags)));
   for (const id of new Set(fresh.map(clusterOf))) stmts.push(db.prepare(CLUSTER_REFRESH).bind(id));
   stmts.push(db
     .prepare("INSERT INTO ingest_log (at, run_id, received, inserted, duplicates, ai_failed, errors) VALUES (?, ?, ?, ?, ?, ?, ?)")
