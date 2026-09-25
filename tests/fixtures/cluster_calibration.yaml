@@ -1,0 +1,29 @@
+# 事件分組門檻的校準資料（spec §6.2），標題取自 main 上的自動卡。
+# same：每組內的標題必須合併成同一事件。
+# different：清單內每則各自是不同事件，彼此不能合併，也不能併進 same 的任何一組。
+same:
+  sofi_mastercard:
+    - Mastercard and SoFi Team on Stablecoin Settlement to Cards
+    - SoFi begins stablecoin settlement on Mastercard network for program expected to exceed $25 billion in annualized volume
+    - SoFi tie-up shows stablecoins can provide alternative blockchain settlement rail
+  canada_big_six:
+    - Canada's 'Big Six' banks to launch interbank tokenized deposit initiative
+    - Canada’s six largest banks explore tokenized Canadian dollar deposits
+    - Canada’s big six banks explore tokenized deposit system to modernize payments
+  a16z_rwa_perps:
+    - a16z：RWA永续合约交易额8月同比激增44倍达1173亿美元，链上交易占比升至86%
+    - a16z：CEX RWA 永续交易总量份额约 14% ，链上交易则占 86%
+  cftc_mass_tokenization:
+    - CFTC Chairman Selig says markets must prepare for ‘mass tokenization’
+    - CFTC 主席：大規模代幣化來襲，金融市場未來十年變化超越過去總和
+different:
+  - CFTC Staff Releases Updates to FAQs Concerning Registrants and Registered Entity Activities Relating to Crypto Assets and Blockchain Technologies
+  - EU's financial regulator to make AI and tokenization a supervisory priority in 2027
+  - UK’s largest banks complete world’s first interbank transactions using tokenized deposits
+  - HIFI raises $37M to expand stablecoin payments, tokenized markets
+  - The Clearing House taps Quant for tokenised deposit network
+  - KB Securities, Securitize and Optimism Sign Exploratory Korea Tokenization MOU
+  - SEC’s Peirce Urges Zero-Knowledge Proofs to Reduce KYC Data Collection
+  - Bitwise推出PPLUS RWA Vault，采用杠杆策略目标净收益率超10%
+  - CryptoRank：第三季度永续合约DEX的RWA交易量达3650亿美元，环比增 32%
+  - RockawayX投入1.5亿美元布局RWA信贷，押注链上收益市场
