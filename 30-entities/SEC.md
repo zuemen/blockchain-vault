@@ -1,5 +1,8 @@
 ---
 type: entity
+id: znghcny6
+title: "SEC 美國證券交易委員會"
+origin: ai
 category: 證券監理機關
 jurisdiction: 美國
 topics: [RWA, 金融法規]

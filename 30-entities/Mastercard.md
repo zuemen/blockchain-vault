@@ -1,5 +1,8 @@
 ---
 type: entity
+id: 6me2lggk
+title: "Mastercard"
+origin: ai
 category: 卡組織
 jurisdiction: 全球
 topics: [支付, 穩定幣]

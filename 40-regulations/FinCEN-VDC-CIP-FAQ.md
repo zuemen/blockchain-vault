@@ -1,5 +1,8 @@
 ---
 type: regulation
+id: 34j6q6by
+title: "FinCEN 可驗證數位憑證 CIP FAQ"
+origin: ai
 jurisdiction: 美國
 regulator: FinCEN + Fed / FDIC / NCUA / OCC
 status: 釋義（非新法）

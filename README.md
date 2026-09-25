@@ -186,6 +186,7 @@ npx wrangler pages deployment list --project-name blockchain-vault
 Open folder as vault → 選這個資料夾。四個設定：
 - Files & Links → Default location for new notes：`00-inbox`
 - Templates → Template folder location：`templates`
+  - ⚠️ 新筆記請用 `python scripts/new_note.py <類型> "標題"` 建立：Obsidian 不會產生 `id`，直接插入模板會讓建站驗證失敗，要手動補一個 8 碼 id。
 - Appearance → 開 Graph view
 - Community plugins：**Dataview**（`HOME.md` 需要）、**Templater**、**Obsidian Git**（Pull every 60 min，就能收到自動抓的卡）
 

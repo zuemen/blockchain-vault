@@ -1,5 +1,8 @@
 ---
 type: entity
+id: adfektsb
+title: "SFC 香港證券及期貨事務監察委員會"
+origin: ai
 category: 證券監理機關
 jurisdiction: 香港
 topics: [RWA, 金融法規]

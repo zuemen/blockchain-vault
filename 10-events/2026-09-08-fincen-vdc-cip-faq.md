@@ -1,5 +1,7 @@
 ---
 type: event
+id: ojjq7psa
+origin: ai
 date: 2026-09-08
 title: FinCEN 與四大銀行監理機關：可驗證數位憑證可用於 CIP 身分驗證
 source_url: https://www.fincen.gov/news/news-releases/fincen-issues-frequently-asked-questions-regarding-treatment-verifiable-digital
@@ -10,8 +12,6 @@ entities: ["[[FinCEN]]", "[[OCC]]", "[[Proof]]"]
 regulations: ["[[FinCEN-VDC-CIP-FAQ]]"]
 concepts: ["[[可驗證數位憑證-VDC]]", "[[選擇性揭露]]"]
 score: 9
-status: read
-used_in: []
 ---
 
 ## 一句話

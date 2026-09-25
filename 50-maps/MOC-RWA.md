@@ -1,5 +1,8 @@
 ---
 type: moc
+id: v6sltaib
+title: "MOC — RWA 與代幣化"
+origin: ai
 topics: [RWA]
 updated: 2026-09-23
 ---

@@ -1,5 +1,8 @@
 ---
 type: entity
+id: jb5u6vf4
+title: "Anchorage Digital Bank"
+origin: ai
 category: 銀行／發幣服務
 jurisdiction: 美國
 topics: [穩定幣, 金融法規]

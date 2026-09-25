@@ -39,3 +39,21 @@ export async function loadTitles(env, request) {
     return null;
   }
 }
+
+// 固定時間比較，避免從回應時間推測 token
+export function safeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// 驗證 header 裡的 token。通過回傳 null，否則回傳 403 回應。伺服器沒設 token 時一律拒絕。
+export function checkToken(request, expected, header) {
+  if (!expected) return json({ error: "伺服器未設定 token" }, 403);
+  const given = request.headers.get(header) || "";
+  return safeEqual(given, expected) ? null : json({ error: "token 不正確" }, 403);
+}
+
+// D1 查詢失敗時的統一回應（spec §8.3）
+export const dbUnavailable = () => json({ error: "db_unavailable" }, 503);

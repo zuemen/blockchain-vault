@@ -1,5 +1,8 @@
 ---
 type: moc
+id: zpgyinio
+title: "MOC — SSI / DID / VC"
+origin: ai
 topics: [SSI]
 updated: 2026-09-23
 ---

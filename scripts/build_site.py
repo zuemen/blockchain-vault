@@ -91,6 +91,7 @@ def collect():
                 source_tier=fm.get("source_tier", ""), score=fm.get("score", ""),
                 maturity=fm.get("maturity", ""), jurisdiction=fm.get("jurisdiction", ""),
                 regulator=fm.get("regulator", ""), status=fm.get("status", ""), stage=fm.get("stage", ""), tracks=fm.get("tracks"), review=fm.get("review", ""),
+                origin=str(fm.get("origin") or ""), reviewed=str(fm.get("reviewed") or ""),
                 body=body, links=[], backlinks=[],
             )
     return notes
@@ -191,6 +192,23 @@ def kicker(n):
         bits.append(f'<span class="k-topic">{esc(n["folder_label"])}</span>')
     seal = '<span class="seal">一手</span>' if n["source_tier"] == "primary" else ""
     return f'<p class="kicker">{seal}{"".join(bits)}</p>'
+
+
+ORIGIN_LABEL = {
+    "ai": ("origin-ai", "AI 撰寫，尚未審閱", "AI 草稿"),
+    "ai-reviewed": ("origin-reviewed", "AI 撰寫，已審閱", "已審閱"),
+}
+
+
+def origin_badge(n):
+    """筆記出處標籤：human 或沒填不顯示。"""
+    hit = ORIGIN_LABEL.get(n.get("origin", ""))
+    if not hit:
+        return ""
+    cls, tip, label = hit
+    if n.get("origin") == "ai-reviewed" and n.get("reviewed"):
+        label = f"{label} {n['reviewed']}"
+    return f'<span class="origin {cls}" title="{esc(tip)}">{esc(label)}</span>'
 
 
 def source_link(n, cls="src"):
@@ -407,6 +425,9 @@ def build_notes(notes):
             prose = re.sub(r"<h2>\s*一句話\s*</h2>\s*<p>.*?</p>", "", prose, count=1, flags=re.S)
 
         byline = [f"<time>{esc(n['date'])}</time>"] if n["date"] else []
+        badge = origin_badge(n)
+        if badge:
+            byline.append(badge)
         if n["source_url"]:
             byline.append(source_link(n))
         if n["folder"] == "10-events" and n["score"] != "":
@@ -861,6 +882,9 @@ article.note .byline{padding:10px 0;border-top:1px solid var(--rule);border-bott
   .lead-deck{font-size:16.5px}
   .prose{font-size:16px}
 }
+.origin{display:inline-block;font-size:.72rem;padding:.05rem .45rem;border-radius:3px;margin-left:.4rem;letter-spacing:.02em}
+.origin-ai{background:#8883;color:inherit;border:1px dashed #888}
+.origin-reviewed{background:#2a7a4b22;color:inherit;border:1px solid #2a7a4b}
 """
 
 JS = """
@@ -1061,6 +1085,10 @@ def build_feed(notes):
 
 
 def main():
+    import taxonomy
+    import validate
+    if validate.report(validate.validate_all(ROOT, taxonomy.load_taxonomy()), ROOT):
+        sys.exit(1)
     # 只清空 site/ 的內容、保留資料夾本身：Windows 上若 run serve 正在 site/ 裡跑，
     # 資料夾被佔用刪不掉，整個 rmtree 會失敗
     OUT.mkdir(exist_ok=True)

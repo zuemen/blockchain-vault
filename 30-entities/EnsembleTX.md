@@ -1,5 +1,8 @@
 ---
 type: entity
+id: auriweah
+title: "EnsembleTX"
+origin: ai
 category: 結算基建／平台
 jurisdiction: 香港
 topics: [RWA, 支付]

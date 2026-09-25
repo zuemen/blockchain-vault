@@ -1,5 +1,8 @@
 ---
 type: regulation
+id: "{{id}}"
+title: "{{title}}"
+origin: human
 jurisdiction:
 regulator:
 status:

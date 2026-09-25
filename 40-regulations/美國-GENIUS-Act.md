@@ -1,11 +1,15 @@
 ---
 type: regulation
+id: iio4xsac
+title: "美國 GENIUS Act（支付型穩定幣法）"
+origin: ai
 jurisdiction: 美國
 regulator: 財政部（FinCEN／OFAC）、OCC、Fed、FDIC、NCUA、各州
 status: 已簽署；實施細則皆為提案，最晚 2027-01-18 生效
 stage: 3
 tracks: [穩定幣]
-effective_date: 2027-01-18（最晚）
+effective_date: 2027-01-18
+effective_note: "最晚"
 topics: [穩定幣, 金融法規]
 review: 待核對
 updated: 2026-09-23

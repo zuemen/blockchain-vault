@@ -1,11 +1,15 @@
 ---
 type: regulation
+id: 4nalzafp
+title: "新加坡 MAS 單一貨幣穩定幣（SCS）框架"
+origin: ai
 jurisdiction: 新加坡
 regulator: MAS
 status: 框架 2023 定案但未入法；支付服務法修正草案諮詢中（至 2026-10-16）
 stage: 2
 tracks: [穩定幣]
-effective_date: 未定
+effective_date:
+effective_note: "未定"
 topics: [穩定幣, 金融法規]
 review: 待核對
 updated: 2026-09-23
