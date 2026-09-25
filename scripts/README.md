@@ -1,73 +1,49 @@
-# 自動化
+# 新聞管線
 
-## 本機跑一次
-```bash
-pip install feedparser pyyaml
-python3 scripts/fetch_news.py --dry-run     # 先看抓到什麼、分數合不合理
-python3 scripts/fetch_news.py --top 8       # 真的寫入 vault
+每天台北 07:00 由 GitHub Actions（`.github/workflows/news.yml`）執行 `fetch_news.py`，
+結果送進 D1（`POST /api/ingest`），**不再寫 repo**。
+
+```
+抓取 → 評分 → 解 Google News 轉址 → 網址正規化 → 去重 → 分組 → 取上限 → 標記 → 抓原文 → 送出
 ```
 
-週一補週末：`python3 scripts/fetch_news.py --hours 72`
+## 本機試跑
+```bash
+pip install -r requirements-news.txt           # 含 CPU 版 torch，約 1 GB
+python scripts/fetch_news.py --dry-run         # 印排名、分組、標記、來源健康度，不送出
+```
+有設 `SITE_URL`、`INGEST_TOKEN` 時，dry-run 會讀資料庫既有新聞來比對；沒設就當資料庫是空的。
+Windows 要加 `PYTHONUTF8=1`；torch 要裝在短路徑的 venv（例如 `C:\bvv`），否則會撞到 260 字元路徑上限。
 
-## 調整
-- **來源**：改 `feeds.yaml` 的 `primary` / `trade`
-- **權重**：改 `feeds.yaml` 的 `weights`。一手來源自動 +4 分（`fetch_news.py` 的 `TIER_BONUS`）
-- **主題歸類**：改 `fetch_news.py` 的 `topics_of()`
-
-## 它會做什麼／不會做什麼
-會：寫 `10-events/` 事件卡骨架（判讀欄位留空）、在 `99-daily/` 列出今天新增與命中理由。
-不會：寫 `20-concepts/`、填「我的判讀」、產生連結到不存在的概念筆記。
-
-## 第一週建議
-先跑 `--dry-run` 一週，只觀察分數排序準不準，再開始真的寫檔。
-權重調準之後再接 GitHub Actions。
-
-## 怎麼看分數
-| 分數 | 動作 |
+## 檔案
+| 檔案 | 職責 |
 |---|---|
-| **10 分以上** | 值得展開寫（補判讀、連概念筆記） |
-| **5–9 分** | 掃一眼標題與摘要就好 |
-| **5 分以下** | 忽略 |
+| `feeds.yaml` | 來源清單：`primary`（一手）、`trade`（媒體）、`aggregator`（Google News 查詢） |
+| `../taxonomy.yaml` | 評分權重、雜訊詞、主題對應、轄區規則、分組模型與門檻、每日上限 |
+| `tagging.py` | 唯一的關鍵詞比對 `matches()`，以及 topic／watch／note／jurisdiction 標記 |
+| `scoring.py` | 評分 |
+| `clustering.py` | 事件分組（語意模型，失敗退回標題 Jaccard） |
+| `ingest_client.py` | 呼叫 `/api/news/recent`、`/api/ingest` |
+| `import_legacy.py` | 一次性：把舊自動卡匯入 D1 |
+| `calibrate_clusters.py` | 分組門檻校準，結果記在 `docs/decisions.md` |
 
-上限 20 分（關鍵詞＋組合加分封頂 20，再加 tier 加分／扣分）。
+## 評分（`scoring.py`，規則在 `taxonomy.yaml` 的 `scoring`）
+1. **標題命中加倍**：權重詞在標題得 2 倍，只在摘要得 1 倍。
+2. **組合加分**：`combos` 的 a、b 兩組同時命中才加。
+3. **封頂** `cap: 20`，再每個雜訊詞扣 6。
+4. **核心主題閘**：沒命中 `core` 扣 8；命中才給 tier 加分（一手 +4、Google News −2）。
+   Google News 查詢本身已限定主題（`assume_core: true`），不必再命中 core。
+5. **泛用詞**（`generic`：Polygon、Fidelity、富達、Onyx）只在標題也命中 core 詞時才計分。
 
-計分機制（`fetch_news.py` 的 `score()`）：
-1. **標題命中加倍**：關鍵詞出現在標題得 2 倍權重，只在摘要出現得 1 倍。標題是編輯判斷過的重點，摘要常是順帶一提。
-2. **組合加分**：兩組主題詞同時出現才是真正要找的訊號，單獨出現只是背景雜訊。
-   - 代幣化 × 結算／DvP／CBDC：+4
-   - 穩定幣 × 法規／監理／license：+3
-   - SSI／DID／VC × KYC／AML／法規：+4
-   - ZK × 身分／隱私／法遵：+4
-   - RWA／代幣化 × 基金／債券／黃金／存款：+3
-3. **核心主題閘**：沒命中任何核心詞扣 8 分；命中才給一手來源 +4。
+低於 `limits.min_score`（3）的不送。每天最多開 `limits.daily_top`（60）個**新分組**；併入既有分組的報導不佔名額。
 
-如果某天最高分不到 5 分，通常代表那天真的沒事，不是程式壞了。
+## 比對規則（`tagging.matches()`）
+- 英數關鍵詞做**單字邊界**比對，否則 `SSI` 會命中 `Commission`、`SEC` 會命中 `Securities`。
+- **全大寫縮寫區分大小寫**：`DID` 不會命中英文動詞 did。
+- 尾端 `*` 表示字根，只放寬右邊界（`tokeniz*` 命中 tokenized）。縮寫不要加 `*`。YAML 裡要加引號。
+- 中文做子字串比對，雙方先轉繁體（`稳定币` 也命中 `穩定幣`）；只轉字，不轉詞彙（`监管` 不等於 `監理`）。
 
-## 已知的坑（已修掉，但改權重時要小心）
-短英文縮寫必須做**單字邊界**比對：
-- `SSI` 會命中 `Commission`
-- `SEC` 會命中 `Securities`
-
-不做邊界比對的話，監理機關的例行處分公告會因為 tier 加分霸佔榜首。
-處理在 `fetch_news.py` 的 `matches()`；新增 ASCII 縮寫關鍵字時沿用它就好。
-
-**字根要加 `*`**：雙邊界會讓 `tokeniz` 永遠比不到 `tokenized`。關鍵詞尾端加 `*`（如 `tokeniz*`、`settle*`、`regulat*`）
-只放寬右邊界；縮寫（SSI、SEC、DID…）**不要加** `*`，否則防護失效。YAML 裡要加引號：`"tokeniz*": 2`。
-
-## 事件級去重
-不同媒體報導同一件事只留一張卡（`fetch_news.py` 的 `dedup()` / `existing_events()`）：
-- 標題正規化成關鍵詞集合：英文去停用詞後截前 5 字母當詞幹（tokenized / tokenised → `token`）、中文切 2-gram。
-- 兩則標題 **Jaccard 相似度 ≥ 0.35** 視為同一事件，保留分數高者（同分一手來源優先）；A 像 B、B 像 C 會串成同一群。
-- 也會跟 `10-events/` 既有卡比對，已有的事件不再開新卡。
-- `--dry-run` 會印出「↳ 合併」與「已有事件卡、略過」，調門檻時看這兩段。門檻在 `feeds.yaml` 的 `dedup_threshold`。
-
-門檻為何是 0.35 而不是 0.5：用真實資料校準，同一事件不同媒體的標題相似度多在 0.36–0.50，0.5 會漏掉大半；
-0.35 以上的配對實測全是真重複。**限制**：中英文標題之間沒有共同詞，跨語言的同一事件合併不了。
-
-## 雜訊詞
-`feeds.yaml` 的 `noise` 清單（晚宴、酒會、峰會、空投、AMA…），**每命中一個扣 6 分**。活動宣傳稿通常同時出現好幾個，會被扣到負分。
-
-## 數量與門檻
-- 每天最多寫 `--top 15` 則，且只收 **≥ `--min-score 3`** 分的（至少命中核心主題、不是宣傳稿）。來源多、中文快訊量大，靠門檻過濾而不是靠少收來源。
-- 每個來源 20 秒逾時（`socket.setdefaulttimeout`），超過 10 秒的在 dry-run 健康度標「慢」。
-- 評分規則改過之後，跑 `python scripts/fetch_news.py --rescore`（先加 `--dry-run` 試算）重算既有自動卡的分數，頭版排序才會一致。只動 `auto: true` 卡的 `score` 一行。
+## 分組（`clustering.py`）
+新報導依分數高到低，跟 14 天內的報導與本次已處理的報導比 cosine 相似度，
+≥ `clustering.threshold` 就併進最像的那組，否則開新組。模型與門檻的校準見 `docs/decisions.md`。
+模型載入失敗時退回標題 Jaccard（門檻 0.35），log 會標出來。

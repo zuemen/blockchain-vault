@@ -1,0 +1,9 @@
+# GitHub Actions 每日新聞管線的相依（scripts/fetch_news.py、import_legacy.py、calibrate_clusters.py）
+# torch 用 CPU 版，避免下載 2 GB 的 CUDA 版
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+sentence-transformers>=3
+feedparser
+pyyaml
+trafilatura
+googlenewsdecoder==0.2.1

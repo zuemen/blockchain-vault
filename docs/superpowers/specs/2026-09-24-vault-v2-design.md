@@ -258,15 +258,15 @@ CLI：保留 `--dry-run`、`--hours`，其餘上限一律讀 taxonomy。dry-run 
 
 ### 6.2 事件分組
 
-- 模型：`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`（中英文，384 維）。用 `actions/cache` 快取模型。
+- 模型：`sentence-transformers/LaBSE`（中英文，768 維）。用 `actions/cache` 快取模型。原訂 `paraphrase-multilingual-MiniLM-L12-v2`，校準時漏併 5 對，換掉；比較見 `docs/decisions.md`。
 - 輸入：`title` 加上 `title_zh`（有的話）。新進報導跟 14 天內所有報導比較。
 - 規則：cosine ≥ 門檻就併進相似度最高的分組，否則開新組。
-- 門檻初值 0.75。**上線前要用已知重複校準**：SoFi／Mastercard 3 張、加拿大六大銀行 3 張、a16z 2 張、CFTC 中英各 1 張都要合併，而 9/24 那批裡明顯不同的事件不能合併。校準結果寫進 `docs/decisions.md`。
+- 門檻 0.67（2026-09-25 校準）。**上線前要用已知重複校準**：SoFi／Mastercard 3 張、加拿大六大銀行 3 張、a16z 2 張、CFTC 中英各 1 張都要合併，而 9/24 那批裡明顯不同的事件不能合併。校準結果寫進 `docs/decisions.md`。
 - 標題 Jaccard 保留當備援：模型載入失敗時退回舊方法，並在 log 標記。
 
 ### 6.3 標記（在 Actions 做）
 
-- `topic`：沿用評分詞表對應。
+- `topic`：沿用評分詞表對應。關鍵詞比對一律用 `tagging.matches()`：全大寫縮寫區分大小寫，中文先簡轉繁。
 - `watch`：命中 watchlist 別名。
 - `note`：命中任一筆記的 `aliases` 或 `title`（ASCII 用單字邊界，CJK 用子字串，長度 ≥ 2）。
 - `jurisdiction`：沿用 tracker.py 規則，搬到 taxonomy。
