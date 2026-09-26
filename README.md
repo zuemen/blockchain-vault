@@ -190,6 +190,16 @@ Open folder as vault → 選這個資料夾。四個設定：
 - Appearance → 開 Graph view
 - Community plugins：**Dataview**（`HOME.md` 需要）、**Templater**、**Obsidian Git**（Pull every 60 min，就能收到自動抓的卡）
 
+### Vault Curate（知識層：語意搜尋與找關聯）
+Settings → Community plugins → Browse，搜尋 **Vault Curate** 安裝並啟用（外掛檔案不進 git：打包檔會被 GitHub secret scanning 誤判擋下）。第一次選「內建（裝置端）」，建索引（模型約 110 MB，只下載一次）。
+
+進階設定照這樣填（`data.json` 不進 git，每台電腦各自設）：
+- 排除資料夾：`templates/`、`00-inbox/`、`99-daily/`、`docs/`、`site/`、`tests/`、`db/`、`functions/`、`scripts/`
+- 關聯圖資料夾：`70-canvases`（不在 `PUBLIC_DIRS`，不會上網站）
+- 相關筆記小節標題：`相關筆記`
+
+用法：寫概念筆記時看側欄的相關筆記；對筆記右鍵「VC: 生成關聯圖」，勾選紫邊→「套用紫邊為 wikilink」。寫進去的是 `[[檔名]]`，建站會算進「這篇連出去／連到這裡的筆記」，`make validate` 也會檢查連結有沒有斷。每條連結都要你勾選才會寫，不違反「概念筆記自己寫」。
+
 ## 三條紀律（比技術重要）
 1. **一張事件卡至少一行「我的判讀」，否則刪掉。** 只有摘要的卡＝書籤，價值等於零。
 2. **`20-concepts/` 只能自己寫。** 驗證方式：隨便打開一篇，闔上螢幕講三分鐘。講不出來的，`maturity` 就還是 seed。
