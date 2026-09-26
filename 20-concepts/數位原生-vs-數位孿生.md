@@ -1,5 +1,8 @@
 ---
 type: concept
+id: hxx2y5ly
+title: "數位原生 vs 數位孿生"
+origin: ai
 topics: [RWA]
 maturity: growing
 updated: 2026-09-23

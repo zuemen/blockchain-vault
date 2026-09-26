@@ -1,5 +1,7 @@
 ---
 type: event
+id: 7szh2pkq
+origin: ai
 date: 2026-09-16
 title: Circle 的 L1 公鏈 Arc 主網上線，USDC 當 gas，機構自己出塊
 source_url: https://www.theblock.co/news/ecosystems/2026-09-16-circle-launches-arc-mainnet-with-blackrock-and-visa-among-validators-mints-10-billion-arc-tokens-415250
@@ -10,8 +12,6 @@ entities: ["[[Circle]]", "[[Mastercard]]", "[[Visa]]"]
 regulations: []
 concepts: ["[[結算]]", "[[可篩選的結算層]]"]
 score: 7
-status: read
-used_in: []
 ---
 
 ## 一句話

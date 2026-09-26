@@ -1,0 +1,143 @@
+// POST /api/ingest → GitHub Actions 送來的新聞，每批最多 10 則（spec §6.4）。
+// header x-ingest-token 要與環境變數 INGEST_TOKEN 相符。
+// body：{ run_id, skip_ai, items: [...] }，欄位見 functions/_ingest.js。
+// 回傳：{ inserted, duplicates, ai_failed, errors: [{index, url, error}], clusters: {"new:<n>": id} }
+import { json, getDB, noDB, checkToken, dbUnavailable } from "../_lib.js";
+import { validateItem, MAX_BATCH } from "../_ingest.js";
+import { summarize } from "../_ai.js";
+
+// 重算分組的篇數、時間範圍與代表報導（分數最高者）
+const CLUSTER_REFRESH = `UPDATE clusters SET
+  item_count   = (SELECT COUNT(*) FROM news_items WHERE cluster_id = ?1),
+  first_seen   = COALESCE((SELECT MIN(published_at) FROM news_items WHERE cluster_id = ?1), first_seen),
+  last_seen    = COALESCE((SELECT MAX(published_at) FROM news_items WHERE cluster_id = ?1), last_seen),
+  lead_item_id = (SELECT id FROM news_items WHERE cluster_id = ?1 ORDER BY score DESC, id ASC LIMIT 1),
+  title_zh     = (SELECT title_zh FROM news_items WHERE cluster_id = ?1 ORDER BY score DESC, id ASC LIMIT 1)
+  WHERE id = ?1`;
+
+const INSERT_ITEM = `INSERT INTO news_items (url_canonical, url_original, url_resolved, title, title_zh, outlet,
+  source_feed, tier, lang, published_at, fetched_at, summary, summary_by, score, cluster_id, added_by)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (url_canonical) DO NOTHING`;
+
+// 每批最多 400 個標記：用一個 JSON 參數寫入，避免逐個標記耗盡 D1 查詢額度。
+const INSERT_TAGS = `INSERT OR IGNORE INTO news_tags (news_id, kind, key)
+  SELECT n.id, json_extract(t.value, '$.kind'), json_extract(t.value, '$.key')
+  FROM json_each(?) AS t JOIN news_items AS n
+    ON n.url_canonical = json_extract(t.value, '$.url')`;
+
+const placeholders = (n) => Array(n).fill("?").join(",");
+
+export async function onRequestPost({ request, env }) {
+  const denied = checkToken(request, env.INGEST_TOKEN, "x-ingest-token");
+  if (denied) return denied;
+  const db = getDB(env);
+  if (!db) return noDB();
+  let data;
+  try {
+    data = await request.json();
+  } catch {
+    return json({ error: "請送 JSON" }, 400);
+  }
+  const items = Array.isArray(data?.items) ? data.items : null;
+  if (!items || items.length === 0 || items.length > MAX_BATCH) {
+    return json({ error: `items 須為 1–${MAX_BATCH} 筆的陣列` }, 400);
+  }
+  const runId = typeof data.run_id === "string" ? data.run_id.slice(0, 100) : null;
+  try {
+    return json(await ingest(db, env.AI, items, data.skip_ai === true, runId));
+  } catch (e) {
+    console.error("ingest failed", e);
+    return dbUnavailable();
+  }
+}
+
+export async function ingest(db, ai, raw, skipAI, runId) {
+  const errors = [];
+  const valid = [];
+  raw.forEach((r, index) => {
+    const v = validateItem(r);
+    if (v.error) errors.push({ index, url: typeof r?.url_canonical === "string" ? r.url_canonical : null, error: v.error });
+    else valid.push(v.item);
+  });
+
+  // 網址重複：資料庫已有，或同一批前面已出現。重複不算錯誤。
+  const urls = [...new Set(valid.map((i) => i.url_canonical))];
+  const known = new Set();
+  const clusters = {};
+  if (urls.length) {
+    const { results } = await db
+      .prepare(`SELECT url_canonical, cluster_id FROM news_items WHERE url_canonical IN (${placeholders(urls.length)})`)
+      .bind(...urls).all();
+    results.forEach((r) => known.add(r.url_canonical));
+    // 寫入成功但回應遺失時，重試仍須回傳分組對照，後續批次才能沿用。
+    const stored = new Map(results.map((r) => [r.url_canonical, r.cluster_id]));
+    for (const it of valid) {
+      const id = stored.get(it.url_canonical);
+      if (typeof it.cluster_ref === "string" && Number.isInteger(id)) clusters[it.cluster_ref] ??= id;
+    }
+  }
+  const fresh = [];
+  for (const it of valid) {
+    if (known.has(it.url_canonical)) continue;
+    known.add(it.url_canonical);
+    fresh.push(it);
+  }
+  const duplicates = valid.length - fresh.length;
+
+  // 指向不存在的分組：改成開一個新組，不丟掉新聞
+  const numRefs = [...new Set(fresh.map((i) => i.cluster_ref).filter(Number.isInteger))];
+  if (numRefs.length) {
+    const { results } = await db
+      .prepare(`SELECT id FROM clusters WHERE id IN (${placeholders(numRefs.length)})`)
+      .bind(...numRefs).all();
+    const exists = new Set(results.map((r) => r.id));
+    for (const it of fresh) {
+      if (Number.isInteger(it.cluster_ref) && !exists.has(it.cluster_ref)) it.cluster_ref = `missing:${it.cluster_ref}`;
+    }
+  }
+
+  // 新分組：只替真的要寫入的報導開，全是重複的就不開（避免留下空分組）。
+  // 編號先從 MAX(id) 預先配好，分組與新聞在同一個 db.batch（同一個交易）寫入：
+  // 任何一句失敗整批回滾，不會留下空分組。讀完編號後若有別的寫入者搶先建分組，
+  // 主鍵衝突讓整批失敗（回 503），呼叫端重試即可。
+  const newRefs = [...new Set(fresh.map((i) => i.cluster_ref)
+    .filter((r) => typeof r === "string" && clusters[r] === undefined))];
+  const stmts = [];
+  if (newRefs.length) {
+    const { results } = await db.prepare("SELECT COALESCE(MAX(id), 0) AS max FROM clusters").all();
+    const max = results[0].max;
+    const now = new Date().toISOString();
+    newRefs.forEach((ref, k) => {
+      clusters[ref] = max + 1 + k;
+      stmts.push(db.prepare("INSERT INTO clusters (id, first_seen, last_seen, item_count) VALUES (?, ?, ?, 0)")
+        .bind(clusters[ref], now, now));
+    });
+  }
+  const clusterOf = (it) => (typeof it.cluster_ref === "string" ? clusters[it.cluster_ref] : it.cluster_ref);
+
+  // AI 摘要平行呼叫；失敗的退回 RSS 摘要，不擋入庫
+  const sums = skipAI ? fresh.map(() => null) : await Promise.all(fresh.map((it) => summarize(ai, it)));
+  let aiFailed = 0;
+  const fetchedAt = new Date().toISOString();
+  fresh.forEach((it, k) => {
+    const s = sums[k];
+    if (!skipAI && !s) aiFailed++;
+    const useAI = Boolean(s && s.summary);
+    const summary = useAI ? s.summary : it.rss_summary || null;
+    const summaryBy = useAI ? "ai" : summary ? "rss" : null;
+    stmts.push(db.prepare(INSERT_ITEM).bind(
+      it.url_canonical, it.url_original, it.url_resolved, it.title, s?.title_zh ?? null, it.outlet,
+      it.source_feed, it.tier, it.lang, it.published_at, fetchedAt, summary, summaryBy, it.score,
+      clusterOf(it), it.added_by));
+  });
+  const tags = fresh.flatMap((it) => it.tags.map((t) => ({ ...t, url: it.url_canonical })));
+  if (tags.length) stmts.push(db.prepare(INSERT_TAGS).bind(JSON.stringify(tags)));
+  for (const id of new Set(fresh.map(clusterOf))) stmts.push(db.prepare(CLUSTER_REFRESH).bind(id));
+  stmts.push(db
+    .prepare("INSERT INTO ingest_log (at, run_id, received, inserted, duplicates, ai_failed, errors) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(fetchedAt, runId, raw.length, fresh.length, duplicates, aiFailed, errors.length ? JSON.stringify(errors) : null));
+  await db.batch(stmts);
+
+  const newOnly = Object.fromEntries(Object.entries(clusters).filter(([k]) => k.startsWith("new:")));
+  return { inserted: fresh.length, duplicates, ai_failed: aiFailed, errors, clusters: newOnly };
+}

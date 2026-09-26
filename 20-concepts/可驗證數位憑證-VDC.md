@@ -1,5 +1,8 @@
 ---
 type: concept
+id: wvh5sumd
+title: "可驗證數位憑證（VDC / Verifiable Digital Credential）"
+origin: ai
 topics: [SSI, 金融法規]
 maturity: growing
 updated: 2026-09-23

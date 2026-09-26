@@ -1,5 +1,8 @@
 ---
 type: entity
+id: ekw5ovyg
+title: "FinCEN（美國財政部金融犯罪執法局）"
+origin: ai
 category: 監理機關
 jurisdiction: 美國
 topics: [SSI, 金融法規]

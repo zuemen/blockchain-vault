@@ -1,9 +1,13 @@
 ---
 type: regulation
+id: sj5t3wsl
+title: "SEC 轉讓代理人（Transfer Agent）規則大修"
+origin: ai
 jurisdiction: 美國
 regulator: SEC
 status: 提案
-effective_date: 2026-09-01（提案日）
+effective_date: 2026-09-01
+effective_note: "提案日"
 topics: [RWA, 金融法規]
 updated: 2026-09-23
 ---

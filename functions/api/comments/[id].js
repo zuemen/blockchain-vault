@@ -1,14 +1,6 @@
 // DELETE /api/comments/<id> → 刪除一則留言。
 // 需要 header x-admin-token 與環境變數 ADMIN_TOKEN 相符（給站長清留言用）。
-import { json, getDB, noDB } from "../../_lib.js";
-
-// 固定時間比較，避免從回應時間推測 token
-function safeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
+import { json, getDB, noDB, safeEqual } from "../../_lib.js";
 
 export async function onRequestDelete({ request, params, env }) {
   const expected = env.ADMIN_TOKEN;

@@ -4,38 +4,20 @@
 - 階段只來自你寫的法規筆記（40-regulations）：status 文字自動換算，或用 frontmatter 的 stage: 1–5 直接指定。
 - 事件卡只當「動態」掛在格子的時間軸上，不會自動改階段——進度判斷要人來做。
 
-國家、議題、關鍵詞都寫在這個檔案最上面，要加國家或調整分類改這裡就好。
+國家的判斷規則在 taxonomy.yaml 的 jurisdiction_rules；議題與階段的關鍵詞寫在這個檔案。
 """
 import re
 
-# ── 國家：依顯示順序。keywords 比對標題與內文開頭；sources 比對事件的來源名稱 ──
-COUNTRIES = [
-    ("美國", dict(
-        keywords=["美國", "美联储", "聯準會", "美國財政部", "U.S.", "US", "American", "SEC", "Fed", "Federal Reserve",
-                  "OCC", "FDIC", "CFTC", "FinCEN", "Treasury", "GENIUS", "Congress", "White House",
-                  # 主要美國業者：標題沒寫國名時靠它們判斷（例：SoFi 穩定幣結算）
-                  "SoFi", "Mastercard", "Visa", "Circle", "Coinbase", "JPMorgan", "BlackRock", "Paxos",
-                  "Anchorage", "Ondo", "Nasdaq", "NYSE", "DTCC", "Citi", "Goldman", "Fiserv"],
-        sources=["SEC", "Federal Reserve", "OCC", "FDIC", "CFTC", "FinCEN"])),
-    ("歐盟", dict(
-        keywords=["歐盟", "歐洲央行", "欧盟", "EU", "European", "Europe", "ECB", "Eurosystem", "ESMA", "EBA", "MiCA"],
-        sources=["ECB", "ESMA", "EBA"])),
-    ("英國", dict(
-        keywords=["英國", "英国", "UK", "U.K.", "Britain", "British", "Bank of England", "BoE", "FCA"],
-        sources=["Bank of England"])),
-    ("香港", dict(
-        keywords=["香港", "Hong Kong", "HKMA", "金管局", "證監會", "SFC"],
-        sources=["HKMA", "SFC HK"])),
-    ("新加坡", dict(keywords=["新加坡", "Singapore", "MAS"], sources=["MAS"])),
-    ("日本", dict(keywords=["日本", "Japan", "Japanese", "JFSA"], sources=["Japan FSA"])),
-    ("韓國", dict(keywords=["韓國", "韩国", "南韓", "Korea", "Korean", "Kakao", "KakaoBank", "Upbit", "Naver"], sources=[])),
-    ("台灣", dict(keywords=["台灣", "臺灣", "Taiwan", "金管會", "央行總裁"], sources=["金管會"])),
-    ("加拿大", dict(keywords=["加拿大", "Canada", "Canadian"], sources=[])),
-]
+import taxonomy
+from tagging import matches
+
+# ── 國家：規則在 taxonomy.yaml 的 jurisdiction_rules（新聞標記也用同一份），依那裡的順序顯示 ──
+_TAX = taxonomy.load_taxonomy()
+COUNTRIES = [(name, dict(keywords=r["keywords"], sources=r.get("sources") or []))
+             for name, r in _TAX["jurisdiction_rules"].items()]
 
 # 只在標題裡算數的泛稱（內文出現不代表事件發生在該國）
-BODY_AMBIGUOUS = {"US", "U.S.", "American", "Treasury", "Fed", "Congress", "Europe", "European", "EU",
-                  "UK", "U.K.", "British", "Korean", "Japanese", "Canadian", "Visa", "Mastercard", "Circle"}
+BODY_AMBIGUOUS = set(_TAX["title_only"])
 
 # ── 議題：一則筆記可同時屬於多條 ──
 TRACKS = [
@@ -72,18 +54,6 @@ STATUS_RULES = [
 ]
 
 
-def _match(kw: str, text: str, low: str) -> bool:
-    """ASCII 關鍵詞用單字邊界；全大寫縮寫（US、EU、SEC…）區分大小寫，避免撞到一般英文字。
-    尾端 * 表示字根。CJK 用子字串。"""
-    stem = kw.endswith("*")
-    k = kw[:-1] if stem else kw
-    if not re.fullmatch(r"[A-Za-z0-9 .\-]+", k):
-        return k in text
-    right = "" if stem else r"(?![A-Za-z0-9])"
-    if k.isupper() or re.fullmatch(r"[A-Z](\.[A-Z])+\.?", k):
-        return re.search(rf"(?<![A-Za-z0-9]){re.escape(k)}{right}", text) is not None
-    return re.search(rf"(?<![a-z0-9]){re.escape(k.lower())}{right}", low) is not None
-
 
 def _text_of(note, body_chars=400):
     """比對用的文字：標題＋內文開頭（跳過 frontmatter 與段落標題）。"""
@@ -104,13 +74,13 @@ def countries_of(note):
     if by_src:
         return by_src
     title = note["title"]
-    by_title = [c for c, cfg in COUNTRIES if any(_match(k, title, title.lower()) for k in cfg["keywords"])]
+    by_title = [c for c, cfg in COUNTRIES if any(matches(k, title) for k in cfg["keywords"])]
     if by_title:
         return by_title
     # 內文只認機構與中文國名；US、Europe 這類泛稱在內文裡太常順帶出現（例：「美元」「US dollar」）
     text = _text_of(note, 300)
     return [c for c, cfg in COUNTRIES
-            if any(_match(k, text, text.lower()) for k in cfg["keywords"] if k not in BODY_AMBIGUOUS)]
+            if any(matches(k, text) for k in cfg["keywords"] if k not in BODY_AMBIGUOUS)]
 
 
 def tracks_of(note):
@@ -126,8 +96,7 @@ def tracks_of(note):
         manual = [manual] if isinstance(manual, str) else list(manual)
         return [t for t in names if t in manual]
     text = note["title"] if note["folder"] == "40-regulations" else _text_of(note)
-    low = text.lower()
-    out = [t for t, kws in TRACKS if any(_match(k, text, low) for k in kws)]
+    out = [t for t, kws in TRACKS if any(matches(k, text) for k in kws)]
     if note["folder"] == "40-regulations":
         topics = set(note.get("topics") or [])
         if "穩定幣" in topics and "穩定幣" not in out:

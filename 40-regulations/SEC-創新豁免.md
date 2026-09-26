@@ -1,5 +1,8 @@
 ---
 type: regulation
+id: 5e4ijo7l
+title: "SEC 代幣化證券交易場所創新豁免"
+origin: ai
 jurisdiction: 美國
 regulator: SEC
 status: 生效（5 年落日）

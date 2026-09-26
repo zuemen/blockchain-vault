@@ -4,3 +4,8 @@
 site/
 __pycache__/
 .wrangler/
+# Vault Curate：設定與決策紀錄、語意索引只留本機（README 建議）
+.obsidian/plugins/*/data.json
+.obsidian/plugins/*/index.sqlite
+.obsidian/community-plugins.json
+.obsidian/plugins/

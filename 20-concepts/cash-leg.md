@@ -1,5 +1,8 @@
 ---
 type: concept
+id: qgtxe2xt
+title: "Cash leg（現金腿）"
+origin: ai
 topics: [RWA, 支付]
 maturity: growing
 updated: 2026-09-23

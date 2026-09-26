@@ -1,5 +1,8 @@
 ---
 type: moc
+id: dg3jzilm
+title: "MOC — 金融法規與監理"
+origin: ai
 topics: [金融法規]
 updated: 2026-09-23
 ---

@@ -1,5 +1,8 @@
 ---
 type: entity
+id: puc7i3rn
+title: "Circle"
+origin: ai
 category: 穩定幣發行人／基礎設施
 jurisdiction: 美國
 topics: [穩定幣, 支付]

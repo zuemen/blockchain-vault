@@ -1,5 +1,8 @@
 ---
 type: regulation
+id: nkugm66l
+title: "SFC「相關穩定幣」與代幣化存款規則"
+origin: ai
 jurisdiction: 香港
 regulator: SFC
 status: 生效

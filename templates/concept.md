@@ -1,5 +1,8 @@
 ---
 type: concept
+id: "{{id}}"
+title: "{{title}}"
+origin: human
 topics: []
 maturity: seed
 updated: {{date}}

@@ -1,5 +1,8 @@
 ---
 type: entity
+id: r3hlxzqz
+title: "HKMA 香港金融管理局"
+origin: ai
 category: 央行／監理機關
 jurisdiction: 香港
 topics: [RWA, 穩定幣, 金融法規]

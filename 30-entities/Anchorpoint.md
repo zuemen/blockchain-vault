@@ -1,5 +1,8 @@
 ---
 type: entity
+id: hfd4xcqb
+title: "Anchorpoint Financial"
+origin: ai
 category: 穩定幣發行人
 jurisdiction: 香港
 topics: [穩定幣]

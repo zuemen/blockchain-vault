@@ -1,43 +1,54 @@
-# 每天抓新聞並 commit 事件卡與每日筆記。
-# 這裡只負責「抓」，不建站、不部署——push 之後由 Cloudflare Pages 自動 build。
+# 每天抓新聞並送進 D1（POST /api/ingest）。不 commit、不重建網站。
+# 手動執行時可選 mode=import：把 10-events/ 的舊自動卡匯入 D1（只需跑一次，重跑無害）。
 name: news
 
 on:
   schedule:
     - cron: "0 23 * * *"      # UTC 23:00 = 台北 07:00
-  workflow_dispatch:          # 保留手動觸發（Actions 頁面 → Run workflow）
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "daily＝每日抓取；import＝匯入舊自動卡"
+        type: choice
+        options: [daily, import]
+        default: daily
 
 permissions:
-  contents: write             # 只需要能 push 事件卡
+  contents: read              # 不再 push
 
 concurrency:
   group: news
-  cancel-in-progress: false   # 不中斷進行中的抓取，避免 commit 做到一半
+  cancel-in-progress: false
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SITE_URL: ${{ secrets.SITE_URL }}
+      INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install feedparser pyyaml
+          cache: pip
+          cache-dependency-path: requirements-news.txt
+      - run: pip install -r requirements-news.txt
+      - name: 快取分組模型
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-sentence-transformers-LaBSE     # 換模型時改這裡
 
-      - name: 抓新聞（週一改抓 72 小時補週末）
+      - name: 每日抓取（週一改抓 72 小時補週末）
+        if: github.event.inputs.mode != 'import'
         run: |
           HOURS=36
           # 用台北時間判斷星期：cron 在 UTC 週日 23:00 觸發，那時台北已是週一
           [ "$(TZ=Asia/Taipei date +%u)" = "1" ] && HOURS=72
-          echo "抓取最近 ${HOURS} 小時"
-          python3 scripts/fetch_news.py --hours "$HOURS" --top 15
+          python scripts/fetch_news.py --hours "$HOURS"
 
-      - name: commit 事件卡與每日筆記
-        run: |
-          git config user.name  "news-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add 10-events 99-daily
-          # 沒有新東西就不 commit，也不會觸發 Cloudflare 重建
-          git diff --staged --quiet && { echo "無新事件"; exit 0; }
-          git commit -m "news: $(TZ=Asia/Taipei date +%Y-%m-%d)"
-          git push
+      - name: 匯入舊自動卡
+        if: github.event.inputs.mode == 'import'
+        run: python scripts/import_legacy.py
